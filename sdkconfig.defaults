@@ -1,0 +1,6 @@
+# ARMOR-RADAR defaults. Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
+#
+# The three radars need all three UARTs, and UART0 is the default console. Move the
+# console to the native USB Serial/JTAG peripheral so UART0 is free for a radar.
+# Verify on the real board that its USB connector is wired to the ESP32-S3 native USB.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
