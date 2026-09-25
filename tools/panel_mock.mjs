@@ -94,7 +94,7 @@ const server = createServer(async (request, response) => {
   const session = sessions.get(tokenOf(request));
   const setup = users.size === 0;
 
-  if (method === "GET" && route === "session") return json(response, 200, { setup, authenticated: !!session, user: session?.user ?? "", role: session?.role ?? "", node_id: config.node.id, language: config.ui.language, version: "0.2.3", setup_ssid: setup ? "ARMOR-SETUP-A1B2C3" : "" });
+  if (method === "GET" && route === "session") return json(response, 200, { setup, authenticated: !!session, user: session?.user ?? "", role: session?.role ?? "", node_id: config.node.id, language: config.ui.language, version: "0.2.3", setup_ssid: setup ? "ARMOR-SETUP-A1B2C3" : "", mac: "34:85:18:a1:b2:c3" });
   if (method === "POST" && route === "setup") {
     if (!setup) return json(response, 403, { error: "forbidden" });
     if (body.code !== "TESTCODE") return json(response, 403, { error: "wrong_code" });

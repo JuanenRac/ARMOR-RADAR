@@ -42,7 +42,7 @@ struct Plan {
 // A host name from the settings, or "armor-" + the node id (underscores become hyphens, at most 32 characters, never ending in a hyphen).
 inline std::string hostname_for(const config::Settings& s) {
   if (!s.ip.hostname.empty()) return s.ip.hostname;
-  std::string name = "armor-";
+  std::string name = s.node_id.compare(0, 6, "armor-") == 0 ? "" : "armor-";   // a node still named after its MAC is already armor-xxxxxx
   for (const char c : s.node_id) name += c == '_' ? '-' : c;
   if (name.size() > 32) name.resize(32);
   while (!name.empty() && name.back() == '-') name.pop_back();

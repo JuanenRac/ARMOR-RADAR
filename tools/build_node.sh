@@ -2,6 +2,7 @@
 # ARMOR-RADAR - builds the firmware of one node in the official ESP-IDF container.
 # Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
 #
+#   tools/build_node.sh generic                # the UNIVERSAL image: no node's data inside, writes dist/generic.bin
 #   tools/build_node.sh perimetro-1            # reads secrets/perimetro-1.conf, writes dist/perimetro-1.bin
 #
 # secrets/<node>.conf holds that node's own settings (its identity, its broker password, and anything else that differs from
@@ -13,8 +14,17 @@ NODE="${1:-}"
 IDF_IMAGE="${ARMOR_IDF_IMAGE:-espressif/idf:v5.4.2}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONF="secrets/$NODE.conf"
-[[ -f "$ROOT/$CONF" ]] || { echo "missing $CONF - run tools/provision_node.sh $NODE first (or copy secrets/node.conf.example)" >&2; exit 1; }
-grep -q "CONFIG_ARMOR_NODE_ID=\"$NODE\"" "$ROOT/$CONF" || { echo "$CONF must set CONFIG_ARMOR_NODE_ID=\"$NODE\"" >&2; exit 1; }
+DEFAULTS="sdkconfig.defaults;$CONF"
+if [[ "$NODE" == "generic" ]]; then
+  # The universal image: the same firmware for every board. Name, address, Wi-Fi, broker and users are set in each node's own panel (or
+  # by tools/adopt_node.py). secrets/generic.conf, if it exists (tools/make_fleet.py makes it), holds the fleet secret from which each
+  # board's set-up code is derived using its MAC.
+  DEFAULTS="sdkconfig.defaults"
+  [[ -f "$ROOT/secrets/generic.conf" ]] && DEFAULTS="sdkconfig.defaults;secrets/generic.conf"
+else
+  [[ -f "$ROOT/$CONF" ]] || { echo "missing $CONF - run tools/provision_node.sh $NODE first (or copy secrets/node.conf.example), or build the universal image: tools/build_node.sh generic" >&2; exit 1; }
+  grep -q "CONFIG_ARMOR_NODE_ID=\"$NODE\"" "$ROOT/$CONF" || { echo "$CONF must set CONFIG_ARMOR_NODE_ID=\"$NODE\"" >&2; exit 1; }
+fi
 
 DOCKER="docker"
 docker info >/dev/null 2>&1 || DOCKER="sudo docker"
@@ -23,8 +33,8 @@ mkdir -p "$ROOT/dist" "$ROOT/build"
 $DOCKER run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp -v "$ROOT":/project -w /project "$IDF_IMAGE" bash -c "
   set -e
   BUILD=build/$NODE
-  idf.py -B \$BUILD -D SDKCONFIG=\$BUILD/sdkconfig -D 'SDKCONFIG_DEFAULTS=sdkconfig.defaults;$CONF' set-target esp32s3 >/dev/null
-  idf.py -B \$BUILD -D SDKCONFIG=\$BUILD/sdkconfig -D 'SDKCONFIG_DEFAULTS=sdkconfig.defaults;$CONF' build
+  idf.py -B \$BUILD -D SDKCONFIG=\$BUILD/sdkconfig -D 'SDKCONFIG_DEFAULTS=$DEFAULTS' set-target esp32s3 >/dev/null
+  idf.py -B \$BUILD -D SDKCONFIG=\$BUILD/sdkconfig -D 'SDKCONFIG_DEFAULTS=$DEFAULTS' build
   cd \$BUILD
   python -m esptool --chip esp32s3 merge_bin -o /project/dist/$NODE.bin @flash_args
 "

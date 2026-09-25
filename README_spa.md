@@ -30,7 +30,7 @@
 * **Actualizaciones por el aire con vuelta atrás** desde el panel (dos ranuras en la flash de 16 MB), y un **enlace desde Studio** al panel de cada nodo, a partir de la dirección que el nodo publica.
 * **Decodificador LD2450, salud y configuración:** un delimitador que se resincroniza encuentra tramas en un flujo ruidoso; cada trama de 30 bytes da hasta tres objetivos que pasan a ser pistas del contrato; la consola y el panel dicen por radar si informa, está en silencio o llega ininteligible. El panel también puede leer la versión del módulo, elegir uno o tres objetivos y fijar zonas de detección (un protocolo sin comprobar con un módulo).
 * **Luz ambiente y mensajes exactos al contrato:** el VEML7700 con rango automático; JSON de telemetría, salud e información que sigue los esquemas publicados y se niega a escribir algo inválido, con marcas de tiempo reales (SNTP) y un last will de MQTT. La telemetría se retiene mientras ningún radar informa, nunca un «todo despejado» vacío.
-* **Herramientas de banco:** alta de la identidad en el broker y del código de configuración sin mostrarlos, grabación por USB, un nodo simulado para trabajar en el panel y un conversor de un registro de tramas en bruto a un fixture de pruebas ([puesta en marcha](docs/BENCH_BRINGUP.md)).
+* **Una imagen para todas las placas, como un producto de red:** el firmware es el mismo y la MAC distingue las placas (`armor-` y seis dígitos hasta que se le da nombre); `adopt_node.py` da a un nodo recién grabado su administrador, su identidad en el broker y los ajustes comunes de la flota por la red, con un código de configuración calculado desde su MAC, así que 5 nodos o 27 dan el mismo trabajo. **Herramientas de banco:** grabación por USB-C, un nodo simulado para trabajar en el panel y un conversor de un registro de tramas en bruto a un fixture de pruebas ([puesta en marcha](docs/BENCH_BRINGUP.md)).
 
 ---
 
@@ -41,12 +41,16 @@ cmake -S tests -B build/host && cmake --build build/host
 build/host/test_core && build/host/test_node          # 564 comprobaciones, -Werror
 build/host/emit_samples | python tests/check_contract.py
 node tools/panel_mock.mjs --user admin:adminpass123   # el panel sin placa
-tools/provision_node.sh perimetro-1 --host <cm5> --user <usuario> --key <clave>
-tools/build_node.sh perimetro-1                       # una imagen en dist/, en el contenedor de ESP-IDF
+python tools/make_fleet.py                             # una vez: el secreto de la flota y los ajustes comunes
+tools/build_node.sh generic                           # UNA imagen para todas las placas, en el contenedor de ESP-IDF
 ```
 
 ```bat
-tools\flash.bat perimetro-1 COM5 monitor
+tools\flash.bat generic COM5 monitor                  # cada placa, una vez, por USB-C
+```
+
+```bash
+tools/adopt_node.py 192.168.0.181 --id perimetro-3 --fleet secrets/fleet.json --broker-ssh-host <cm5> --broker-ssh-user <usuario>
 ```
 
 Los tests en el ordenador necesitan cualquier compilador C++17 (Linux, WSL, MSYS2). Véanse la [puesta en marcha](docs/BENCH_BRINGUP.md), el [panel](docs/NODE_PANEL.md) y el [límite del hardware](docs/HARDWARE_BOUNDARY.md).
@@ -70,8 +74,8 @@ ARMOR-RADAR/
 │   └── core/               framer, ld2450, ld2450_command, node_config, board_pins, network_plan, auth, gpio_logic, json, veml7700, telemetry_json...
 ├── panel/                  index.html, app.js, text.js (7 idiomas), style.css
 ├── tests/                  test_core.cpp, test_node.cpp, emit_samples.cpp, check_contract.py, test_tools.py
-├── tools/                  build_node.sh, provision_node.sh, flash.bat, pack_panel.py, panel_mock.mjs, frames_to_fixture.py
-├── secrets/                node.conf.example (los reales están fuera de git)
+├── tools/                  build_node.sh, make_fleet.py, adopt_node.py, provision_node.sh, flash.bat, pack_panel.py, panel_mock.mjs, frames_to_fixture.py
+├── secrets/                node.conf.example, fleet.example.json (los reales están fuera de git)
 ├── partitions.csv, sdkconfig.defaults
 └── docs/                   BENCH_BRINGUP.md, NODE_PANEL.md, HARDWARE_BOUNDARY.md
 ```

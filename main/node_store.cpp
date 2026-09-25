@@ -7,6 +7,7 @@
 extern "C" {
 #include "esp_log.h"
 #include "esp_mac.h"
+#include "mbedtls/md.h"
 #include "mbedtls/pkcs5.h"
 #include "nvs.h"
 #include "nvs_flash.h"
@@ -106,7 +107,16 @@ void init() {
   }
   if (read_blob(kUsersKey, text) && !g_users.from_json(text)) ESP_LOGE(kTag, "the stored users could not be read: the node is back in setup");
   if (g_users.empty()) {
-    if (std::strlen(CONFIG_ARMOR_SETUP_CODE) >= 8) g_setup_code = CONFIG_ARMOR_SETUP_CODE;
+    const std::size_t secret_length = std::strlen(CONFIG_ARMOR_FLEET_SECRET);
+    if (secret_length >= 16) {
+      // The code of this board: HMAC-SHA256 of its MAC (twelve lowercase hexadecimal digits) with the fleet secret, ten symbols of it.
+      const std::string mac_text = auth::to_hex(g_mac, sizeof g_mac);
+      std::uint8_t digest[32];
+      if (mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), reinterpret_cast<const unsigned char*>(CONFIG_ARMOR_FLEET_SECRET), secret_length,
+                          reinterpret_cast<const unsigned char*>(mac_text.data()), mac_text.size(), digest) == 0) g_setup_code = auth::setup_code_from(digest, 10);
+    }
+    if (!g_setup_code.empty()) { /* derived from the fleet secret */ }
+    else if (std::strlen(CONFIG_ARMOR_SETUP_CODE) >= 8) g_setup_code = CONFIG_ARMOR_SETUP_CODE;
     else { std::uint8_t bytes[8]; random_bytes(bytes, sizeof bytes); g_setup_code = auth::setup_code_from(bytes, sizeof bytes); }
   }
 }

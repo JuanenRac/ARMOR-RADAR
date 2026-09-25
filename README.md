@@ -30,7 +30,7 @@
 * **Over-the-air updates with rollback** from the panel (two slots on the 16 MB flash), and a **link from Studio** to each node's panel, from the address the node publishes.
 * **LD2450 decoder, health and configuration:** a resynchronising framer finds frames in a noisy stream; each 30-byte frame gives up to three targets that become contract tracks; the console and the panel say per radar whether it reports, is silent or garbled. The panel can also read the module's version, choose one or three targets and set detection zones (a protocol that is unchecked against a module).
 * **Ambient light and contract-exact messages:** the VEML7700 with automatic range; telemetry, health and information JSON that follow the published schemas and refuse to write anything invalid, with wall-clock timestamps (SNTP) and an MQTT last will. Telemetry is withheld while no radar reports, never an empty 'all clear'.
-* **Bench tools:** provisioning of the broker identity and the set-up code without showing them, flashing over USB, a stand-in node for working on the panel, and a converter from a log of raw frames to a test fixture ([bench bring-up](docs/BENCH_BRINGUP.md)).
+* **One image for every board, like a network product:** the firmware is the same and the MAC tells the boards apart (`armor-` and six digits until named); `adopt_node.py` gives a freshly flashed node its administrator, its broker identity and the fleet's shared settings over the network, with a set-up code computed from its MAC, so 5 nodes or 27 are the same work. **Bench tools:** flashing over USB-C, a stand-in node for working on the panel, and a converter from a log of raw frames to a test fixture ([bench bring-up](docs/BENCH_BRINGUP.md)).
 
 ---
 
@@ -41,12 +41,16 @@ cmake -S tests -B build/host && cmake --build build/host
 build/host/test_core && build/host/test_node          # 564 checks, -Werror
 build/host/emit_samples | python tests/check_contract.py
 node tools/panel_mock.mjs --user admin:adminpass123   # the panel without a board
-tools/provision_node.sh perimetro-1 --host <cm5> --user <user> --key <key>
-tools/build_node.sh perimetro-1                       # one image in dist/, in the ESP-IDF container
+python tools/make_fleet.py                             # once: the fleet secret and the shared settings
+tools/build_node.sh generic                           # ONE image for every board, in the ESP-IDF container
 ```
 
 ```bat
-tools\flash.bat perimetro-1 COM5 monitor
+tools\flash.bat generic COM5 monitor                  # each board, once, by USB-C
+```
+
+```bash
+tools/adopt_node.py 192.168.0.181 --id perimetro-3 --fleet secrets/fleet.json --broker-ssh-host <cm5> --broker-ssh-user <user>
 ```
 
 The host tests need any C++17 compiler (Linux, WSL, MSYS2). See the [bench bring-up](docs/BENCH_BRINGUP.md), the [panel](docs/NODE_PANEL.md) and the [hardware boundary](docs/HARDWARE_BOUNDARY.md).
@@ -70,8 +74,8 @@ ARMOR-RADAR/
 │   └── core/               framer, ld2450, ld2450_command, node_config, board_pins, network_plan, auth, gpio_logic, json, veml7700, telemetry_json...
 ├── panel/                  index.html, app.js, text.js (7 languages), style.css
 ├── tests/                  test_core.cpp, test_node.cpp, emit_samples.cpp, check_contract.py, test_tools.py
-├── tools/                  build_node.sh, provision_node.sh, flash.bat, pack_panel.py, panel_mock.mjs, frames_to_fixture.py
-├── secrets/                node.conf.example (the real files are git-ignored)
+├── tools/                  build_node.sh, make_fleet.py, adopt_node.py, provision_node.sh, flash.bat, pack_panel.py, panel_mock.mjs, frames_to_fixture.py
+├── secrets/                node.conf.example, fleet.example.json (the real files are git-ignored)
 ├── partitions.csv, sdkconfig.defaults
 └── docs/                   BENCH_BRINGUP.md, NODE_PANEL.md, HARDWARE_BOUNDARY.md
 ```

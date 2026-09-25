@@ -8,6 +8,7 @@ tools/.venv/
 certs/
 secrets/*
 !secrets/node.conf.example
+!secrets/fleet.example.json
 tests/fixtures/*.tmp
 *.log
 __pycache__/

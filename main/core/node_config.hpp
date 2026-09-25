@@ -32,6 +32,8 @@ enum class WifiSecurity { kOpen, kWpa2, kWpa3, kWpa2Wpa3 };
 enum class PinMode { kDisabled, kInput, kOutput, kPwm, kAdc };
 enum class Pull { kNone, kUp, kDown };
 enum class SafeState { kOff, kOn, kKeep };
+// When the node accepts configuration over Bluetooth: never, only while it has no user (set-up), or always.
+enum class BleMode { kOff, kSetup, kAlways };
 
 struct IpSettings {
   bool dhcp = true;
@@ -127,6 +129,7 @@ struct Settings {
   std::array<RadarLine, kRadarCount> radars;
   Sensors sensors;
   std::vector<MappedPin> pins;
+  BleMode ble = BleMode::kSetup;
   std::string language = "en";
 };
 
@@ -146,6 +149,7 @@ inline const char* to_text(PinMode v) {
   return "disabled";
 }
 inline const char* to_text(Pull v) { return v == Pull::kUp ? "up" : v == Pull::kDown ? "down" : "none"; }
+inline const char* to_text(BleMode v) { return v == BleMode::kAlways ? "always" : v == BleMode::kOff ? "off" : "setup"; }
 inline const char* to_text(SafeState v) { return v == SafeState::kOn ? "on" : v == SafeState::kOff ? "off" : "keep"; }
 
 // ---- the defaults of a node that has never been configured ---------------------------------------------------------------------
@@ -320,6 +324,9 @@ inline void read_settings(const json::Value& document, Settings& s, Problems& pr
       }
     }
   }
+  if (const json::Value* ble = document.get("ble"); ble != nullptr && ble->is_object()) {
+    if (!read_choice<BleMode>(*ble, "mode", {{"off", BleMode::kOff}, {"setup", BleMode::kSetup}, {"always", BleMode::kAlways}}, s.ble)) bad(problems, "ble.mode", "invalid");
+  }
   if (const json::Value* ui = document.get("ui"); ui != nullptr && ui->is_object()) read_text(*ui, "language", s.language, 4, "ui.language", problems);
 }
 
@@ -480,6 +487,7 @@ inline std::string to_json(const Settings& s, bool secrets) {
         .field("offset", pin.offset).end_object();
   }
   w.end_array();
+  w.key("ble").begin_object().field("mode", to_text(s.ble)).end_object();
   w.key("ui").begin_object().field("language", s.language).end_object();
   w.end_object();
   return w.str();

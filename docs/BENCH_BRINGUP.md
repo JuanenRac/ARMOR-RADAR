@@ -34,45 +34,56 @@ microSD socket, 19 and 20 to the USB port, and GPIO 33 to 37 to the octal PSRAM.
   Do not connect USB and PoE at the same time without reading the schematic.
 * Common ground for everything, and short wires: 256000 baud is fast for a jumper harness.
 
-## 2. Identities on the broker
+## 2. One image for every board
 
-Each node has its own identity (it may write its own telemetry and health, read its own commands, and use `armor/device/<its id>/#` for
-the pins it lends to the server, and write `armor/node/<its id>/info`, where its panel is):
+Like a network product, **every board runs the same firmware**, and only its MAC address tells them apart: a new board is called `armor-` and the
+last six digits of its MAC until you name it, and everything that makes it *your* node (its name, address, Wi-Fi, broker identity, users) lives in
+its own flash and is set in its panel or with `tools/adopt_node.py`. There is nothing to rebuild per node, so 5 boards or 27 are the same work.
 
-    tools/provision_node.sh perimetro-1 --host 192.168.0.180 --user hydra-umc --key ~/.ssh/id_ed25519_hydra_umc
-    tools/provision_node.sh perimetro-2 --host 192.168.0.180 --user hydra-umc --key ~/.ssh/id_ed25519_hydra_umc
+Once, on the computer that builds:
 
-This asks the bench broker for the identity and writes `secrets/<node>.conf` (git-ignored; neither the password nor the **setup code**
-it also makes is printed: read them from that file when you need them). Nodes created before the pins existed need one more line on
-the broker: `sudo mqtt_identity.sh upgrade-node perimetro-1`.
+    python tools/make_fleet.py           # secrets/fleet.secret, secrets/generic.conf, secrets/fleet.json (git-ignored; edit fleet.json)
+    tools/build_node.sh generic          # dist/generic.bin, the same file for every board (from WSL, in the ESP-IDF container)
 
-## 3. Build and flash
+`fleet.json` holds what every node shares (the Wi-Fi name and password, the broker address, the language). `fleet.secret` is what turns a board's
+MAC into its **set-up code** (HMAC-SHA256, ten symbols), so a board can be adopted over the network with no cable. Without the secret the code is
+random at every start and shown on the board's USB console.
 
-From WSL (Docker with the `espressif/idf:v5.4.2` image, about 11 GB the first time):
+## 3. Program a board (USB, once) and adopt it (network)
 
-    tools/build_node.sh perimetro-1
-    tools/build_node.sh perimetro-2
+**Programming.** The board has an Ethernet port (RJ45, with PoE if the PoE module is on) and a **USB-C** port. The first program goes in by USB-C:
+the ESP32-S3 has its USB built in, so the same cable gives the flashing and the log; nothing else is needed and no driver on Windows 10 and 11. Ethernet
+cannot be used for the first program, because a blank chip has no network code yet; once a node runs this firmware, every later update goes in by
+Ethernet from its panel (*Firmware and log*).
 
-Each build is the same firmware with that node's *first* settings inside (identity, broker, setup code); after the first start the
-settings live in the node's flash and its own panel changes them. A build with no `secrets` line is a generic image, configured entirely
-from the panel.
+1. Plug the board to the PC with USB-C. A COM port appears (see it in the Device Manager).
+2. `tools\flash.bat generic COM5 monitor` (use your port). It creates its own Python environment with `esptool` the first time. If the board does
+   not answer, hold **BOOT**, press and release **RESET**, release BOOT, and run it again. Add `erase` to wipe the flash first.
+3. Press RESET. The console prints `A.R.M.O.R. node armor-xxxxxx ... NOT SET UP YET`, and its MAC.
+4. Unplug USB, connect the Ethernet cable (PoE from the switch powers it) and put the board where it will work. Do not connect USB and PoE at the same
+   time without reading the schematic.
 
-From Windows, with the board plugged into the USB-C port:
+**Adopting.** Find the node's address (your router's list of DHCP clients, by the MAC the console showed, or `armor-xxxxxx`), then:
 
-    tools\flash.bat perimetro-1 COM5 monitor
+    tools/adopt_node.py 192.168.0.181 --id perimetro-3 --name "North fence 3" --fleet secrets/fleet.json \
+        --broker-ssh-host 192.168.0.180 --broker-ssh-user hydra-umc --broker-ssh-key ~/.ssh/id_ed25519_hydra_umc
 
-`tools\flash.bat` creates its own Python environment with `esptool` the first time. If the board does not answer, hold BOOT, press and
-release RESET, release BOOT, and run it again. Add `erase` to wipe the flash first (a clean start: settings and users go too). From now
-on, updates can be done from the panel (**Firmware and log**) with `build/<node>/armor_radar.bin`.
+It asks the broker for the node's identity (`provision_node.sh`), creates the administrator (a random password kept in `secrets/<id>.admin`), applies
+the fleet's settings and the node's own, and restarts it. `--ip 192.168.0.60 --gateway 192.168.0.1` gives it a fixed address instead of DHCP.
+By hand, the panel does the same (step 4 below): open the address, enter the set-up code, choose the administrator, fill the pages. Nodes created
+before the pins and the panel link existed need `sudo mqtt_identity.sh upgrade-node <id>` on the broker.
+
+The alternative, an image per node with its identity already inside (`tools/provision_node.sh <id> ...` then `tools/build_node.sh <id>`), still works and
+is what the first two boards were built with; it is not needed any more.
 
 ## 4. First start: the panel
 
-1. The console says `A.R.M.O.R. node ..., NOT SET UP YET`, and every 15 seconds where to go and the setup code.
-2. Open the address the console shows (DHCP), or join the Wi-Fi `ARMOR-SETUP-xxxxxx` (its password is the setup code) and open
-   `http://192.168.4.1/`.
+1. The console says `A.R.M.O.R. node ..., NOT SET UP YET`, and every 15 seconds where to go and the setup code (unless the image has a fleet secret: then
+   the code is the one `adopt_node.py` computes from the MAC, and the panel's set-up screen shows the MAC).
+2. Open the address the console shows (DHCP), or join the Wi-Fi `ARMOR-SETUP-xxxxxx` (its password is the setup code) and open `http://192.168.4.1/`.
 3. Enter the setup code, choose the administrator and a password. The node restarts.
 4. Sign in. **Wi-Fi**: for the shared network give every node the same name, security and password, channel on automatic
-   ([details](NODE_PANEL.md)). **Network**: a fixed address if you want one. **Broker**: already filled in when the build had it.
+   ([details](NODE_PANEL.md)). **Network**: a fixed address if you want one. **Broker**: the identity of this node.
 
 ## 5. What the console (and the Overview page) should say, in order
 

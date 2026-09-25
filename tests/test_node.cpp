@@ -563,7 +563,7 @@ static void test_ld2450_commands() {
 static void test_network_plan() {
   config::Settings s = valid_settings();
   netplan::Plan plan = netplan::plan_network(s, false, "", "a1b2c3", 1);
-  CHECK(plan.layout == netplan::Layout::kEthernet && !plan.ap.enabled && plan.hostname == "armor-armor-a1b2c3");
+  CHECK(plan.layout == netplan::Layout::kEthernet && !plan.ap.enabled && plan.hostname == "armor-a1b2c3");
   s.ap.enabled = true; s.ap.ssid = "ARMOR"; s.ap.password = "wifi-secret-1";
   plan = netplan::plan_network(s, false, "", "a1b2c3", 1);
   CHECK(plan.layout == netplan::Layout::kEthernetBridgedAp && plan.ap.bridged && plan.ap.ssid == "ARMOR" && plan.ap.channel == 6 && plan.ap.country == "ES");
@@ -601,6 +601,10 @@ static void test_network_plan() {
 }
 
 static void test_codes() {
+  // The set-up code of a board is made from HMAC-SHA256(fleet secret, MAC): the digest below is what openssl and Python give for the secret
+  // "fleet-secret-for-tests-0123456789" and the MAC "a1b2c3d4e5f6", and tools/adopt_node.py must reach the same ten symbols.
+  const std::uint8_t digest[10] = {0x63, 0x41, 0x5b, 0x8e, 0x16, 0x45, 0x19, 0xff, 0x5e, 0xc4};
+  CHECK(auth::setup_code_from(digest, 10) == "GD8VZH4HBM");
   const std::uint8_t bytes[8] = {0, 1, 30, 31, 62, 255, 100, 7};
   const std::string code = auth::setup_code_from(bytes, 8);
   CHECK(code.size() == 8 && net::valid_wpa_passphrase(code));

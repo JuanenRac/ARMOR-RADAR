@@ -18,6 +18,15 @@ config ARMOR_SETUP_CODE
         The first administrator of a node is created with this code, from the panel. A fixed code lets a node be set up
         in the field without a cable: tools/provision_node.sh writes one into the node's secrets file. 8 to 32 characters.
 
+config ARMOR_FLEET_SECRET
+    string "Fleet secret: every board's set-up code is derived from it and its MAC (empty: not used)"
+    default ""
+    help
+        With a secret here, the set-up code of a board is made from the secret and the board's own MAC address, so the same universal image
+        gives each board a different code that tools/adopt_node.py can compute without a USB cable. The secret ends up inside the image:
+        whoever can read the flash of a board can compute the codes of the others, so it protects a fleet against the network, not against
+        someone holding a board. Put it in secrets/generic.conf (tools/make_fleet.py does), never in the repository. 16 characters or more.
+
 menu "Radars (HLK-LD2450)"
 
 config ARMOR_RADAR_COUNT

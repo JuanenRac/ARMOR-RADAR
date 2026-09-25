@@ -278,7 +278,7 @@ esp_err_t get_session(httpd_req_t* r) {
   const network::Status n = network::status();
   json::Writer w;
   w.begin_object().field("setup", store::users_empty()).field("authenticated", who.ok).field("user", who.ok ? who.user : "").field("role", who.ok ? auth::to_text(who.role) : "")
-      .field("node_id", s.node_id).field("language", s.language).field("version", version_text()).field("setup_ssid", n.ap_setup ? n.ap_ssid : "").end_object();
+      .field("node_id", s.node_id).field("language", s.language).field("version", version_text()).field("setup_ssid", n.ap_setup ? n.ap_ssid : "").field("mac", n.mac).end_object();
   return send_json(r, 200, w.str());
 }
 

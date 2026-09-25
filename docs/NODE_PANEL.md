@@ -19,6 +19,15 @@ The code is also the password of the set-up Wi-Fi. It works only while the node 
 restarts, which closes the set-up network. To start again, hold the **BOOT** button for 8 seconds in the first 30 seconds after power-up
 (it erases the settings and the users), or use *Factory reset* in the panel.
 
+## Many nodes: one image, adopted over the network
+
+The firmware is the same for every board and the **MAC** tells the boards apart: a new node is `armor-` and the last six digits of its MAC. Build the
+universal image once (`tools/build_node.sh generic`), flash it to every board by USB-C, and adopt each node from the computer:
+`tools/adopt_node.py <address> --id <name> --fleet secrets/fleet.json ...` creates its administrator, gets its identity from the broker and applies the
+settings every node shares (Wi-Fi, broker, language). With a fleet secret (`python tools/make_fleet.py`) the set-up code of a board is
+HMAC-SHA256(secret, MAC), so no cable is needed; the secret is inside the image, so it protects a fleet against the network and not against someone
+holding a board.
+
 ## Pages
 
 | Page | What it does |
