@@ -37,8 +37,8 @@ def main() -> int:
             print(f"{kind} payload violates the contract: {error}\n  {body}", file=sys.stderr)
             return 1
         checked += 1
-    if checked < 7:
-        print(f"expected at least 7 samples, got {checked}", file=sys.stderr)
+    if checked < 9:
+        print(f"expected at least 9 samples, got {checked}", file=sys.stderr)
         return 1
     print(f"CONTRACT=PASS {checked} firmware payloads accepted by ARMOR-COMMON")
     return 0

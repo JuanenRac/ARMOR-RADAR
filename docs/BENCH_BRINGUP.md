@@ -1,41 +1,50 @@
 # Bench bring-up: two ESP32-S3-ETH nodes, three LD2450 radars each
 
-The firmware of this repository targets the **Waveshare ESP32-S3-ETH** (W5500 Ethernet over SPI) with up to three
-**HLK-LD2450** radars and an optional **VEML7700** light sensor. Two such boards, each with three radars, make two nodes of
-270 degrees. **None of it has run on a board yet**: this page is the order to do things in, and what to look at, so the first
-day on the bench finds the faults quickly. The C++ core is tested on a computer; the firmware image builds in a container;
-everything that needs the board is unverified until you have done this page.
+The firmware of this repository targets the **Waveshare ESP32-S3-ETH** (ESP32-S3R8 with 8 MB of octal PSRAM, 16 MB of flash, W5500
+Ethernet over SPI, PoE through the module of the board) with up to three **HLK-LD2450** radars and an optional **VEML7700** light
+sensor. Two such boards, each with three radars, make two nodes of 270 degrees. **None of it has run on a board yet**: this page is
+the order to do things in, and what to look at, so the first day on the bench finds the faults quickly. The C++ core is tested on a
+computer; the firmware image builds in a container; the panel was exercised in a browser against a stand-in node; everything that
+needs the board is unverified until you have done this page.
 
 ## 1. Wiring
 
-Pins are menuconfig values (`Kconfig.projbuild`); these are the defaults and what the manufacturer's pin table shows as free.
-The W5500 is already wired on the board (MOSI 11, MISO 12, SCLK 13, CS 14, INT 10, RST 9), and GPIO 4 to 7 belong to the SD
-card socket, so they are not used.
+The pins are settings of the node (the **Radars** and **Broker** pages of its panel); these are the defaults. All of them are free
+header pins of the board: the W5500 is already wired on it (MOSI 11, MISO 12, SCLK 13, CS 14, INT 10, RST 9), GPIO 4 to 7 belong to the
+microSD socket, 19 and 20 to the USB port, and GPIO 33 to 37 to the octal PSRAM. The pin table with the reasons is
+`main/core/board_pins.hpp`.
 
 | Signal | Board pin | Goes to |
 |---|---|---|
 | Radar 1 receive | GPIO16 | radar 1 **TX** |
 | Radar 2 receive | GPIO17 | radar 2 **TX** |
 | Radar 3 receive | GPIO18 | radar 3 **TX** |
-| 5 V | VBUS | 5 V of each radar |
+| Radar 1 transmit | GPIO15 | radar 1 **RX** |
+| Radar 2 transmit | GPIO21 | radar 2 **RX** |
+| Radar 3 transmit | GPIO38 | radar 3 **RX** |
+| 5 V | VSYS (not VBUS) | 5 V of each radar |
 | Ground | GND | GND of each radar |
 | I2C SDA / SCL (light sensor) | GPIO1 / GPIO2 | VEML7700 SDA / SCL, and its 3V3 and GND |
 
-* The radars' **RX** pin is left unconnected: this firmware does not configure the modules.
+* The radars' **RX** wire is what lets the panel configure them (zones, one or three targets, Bluetooth, restart). Without it the radars
+  still report; the panel says the radar cannot be configured.
 * The LD2450 wants 5 V and speaks 3.3 V logic, so its TX goes straight to the ESP32-S3.
-* Power the board from the USB-C port for the bench, or from a PoE module on its PoE header for the installation. Three radars plus
-  the board stay well under what a USB port gives; measure it, do not assume it.
+* 5 V comes from **VSYS**, the board's own 5 V rail (VBUS is the USB connector's). Check in the schematic before wiring it, and measure the
+  current: three radars plus the board must stay inside what the PoE module of the board can give, and inside what a USB port gives on the bench.
+  Do not connect USB and PoE at the same time without reading the schematic.
 * Common ground for everything, and short wires: 256000 baud is fast for a jumper harness.
 
-## 2. Two identities on the broker
+## 2. Identities on the broker
 
-Each node has its own identity (it may only write its own telemetry and health, and read its own commands):
+Each node has its own identity (it may write its own telemetry and health, read its own commands, and use `armor/device/<its id>/#` for
+the pins it lends to the server, and write `armor/node/<its id>/info`, where its panel is):
 
     tools/provision_node.sh perimetro-1 --host 192.168.0.180 --user hydra-umc --key ~/.ssh/id_ed25519_hydra_umc
     tools/provision_node.sh perimetro-2 --host 192.168.0.180 --user hydra-umc --key ~/.ssh/id_ed25519_hydra_umc
 
-This asks the bench broker for the identity and writes `secrets/<node>.conf` (git-ignored, the password is never printed). Use
-your own names if you prefer: lowercase letters, digits, `-` and `_`.
+This asks the bench broker for the identity and writes `secrets/<node>.conf` (git-ignored; neither the password nor the **setup code**
+it also makes is printed: read them from that file when you need them). Nodes created before the pins existed need one more line on
+the broker: `sudo mqtt_identity.sh upgrade-node perimetro-1`.
 
 ## 3. Build and flash
 
@@ -44,55 +53,70 @@ From WSL (Docker with the `espressif/idf:v5.4.2` image, about 11 GB the first ti
     tools/build_node.sh perimetro-1
     tools/build_node.sh perimetro-2
 
+Each build is the same firmware with that node's *first* settings inside (identity, broker, setup code); after the first start the
+settings live in the node's flash and its own panel changes them. A build with no `secrets` line is a generic image, configured entirely
+from the panel.
+
 From Windows, with the board plugged into the USB-C port:
 
     tools\flash.bat perimetro-1 COM5 monitor
 
-`tools\flash.bat` creates its own Python environment with `esptool` the first time. If the board does not answer, hold BOOT,
-press and release RESET, release BOOT, and run it again. Each image contains its own node identity and broker password: never
-flash the image of one node onto the board of the other.
+`tools\flash.bat` creates its own Python environment with `esptool` the first time. If the board does not answer, hold BOOT, press and
+release RESET, release BOOT, and run it again. Add `erase` to wipe the flash first (a clean start: settings and users go too). From now
+on, updates can be done from the panel (**Firmware and log**) with `build/<node>/armor_radar.bin`.
 
-## 4. What the console should say, in order
+## 4. First start: the panel
 
-1. `node perimetro-1 starting: 3 radar(s) on RX GPIO 16/17/18`
-2. `light: ...` : the VEML7700 answers, or an error naming the pins. **Without the sensor** the node withholds telemetry because
-   the message contract needs a lux value: for a bench test without it set `CONFIG_ARMOR_LIGHT_VEML7700=n` and
-   `CONFIG_ARMOR_LUX_FALLBACK=300` in `secrets/<node>.conf` (the log says BENCH MODE at every start; never leave this in an installation).
-3. `armor-eth: driver started`, then `link up, MAC ...`, then `address 192.168.x.y`. If it stops at *no W5500 answers on SPI*, the
-   board or the pins are not what this page assumes: check the manufacturer's table again.
-4. Every ten seconds, one line per radar:
+1. The console says `A.R.M.O.R. node ..., NOT SET UP YET`, and every 15 seconds where to go and the setup code.
+2. Open the address the console shows (DHCP), or join the Wi-Fi `ARMOR-SETUP-xxxxxx` (its password is the setup code) and open
+   `http://192.168.4.1/`.
+3. Enter the setup code, choose the administrator and a password. The node restarts.
+4. Sign in. **Wi-Fi**: for the shared network give every node the same name, security and password, channel on automatic
+   ([details](NODE_PANEL.md)). **Network**: a fixed address if you want one. **Broker**: already filled in when the build had it.
+
+## 5. What the console (and the Overview page) should say, in order
+
+1. `node armor-... , firmware ...`, the radars' pins, and `pin "..."` lines for every mapped pin.
+2. `light: ...`: the VEML7700 answers, or an error naming the pins. **Without the sensor** the node withholds telemetry because the message
+   contract needs a lux value: for a bench test without it, untick *A VEML7700 is connected* and give a fixed lux in the **Broker** page (the
+   log says BENCH MODE at every start; never leave this in an installation).
+3. `link up`, then `address 192.168.x.y`. If it says *no W5500 answers on SPI*, the board or the pins are not what this page assumes: check
+   the manufacturer's table again. If the PSRAM does not answer the node still starts (without it).
+4. Every ten seconds, one line per radar (and the live state in the panel):
    * `reporting, 10.0 frames/s`: this radar is wired right;
    * `no data`: its TX is not reaching the pin, or it has no power;
    * `bytes but no valid frame`: wrong baud rate, missing common ground, or a module in another mode.
 5. `MQTT connected`, and the node appears in Studio's Radar menu as online within a few seconds.
+6. In **Radars**, *Read information*: a version such as `1.02.22062416` confirms the command channel. If the module answers nothing, check the
+   TX wire; if it answers something else, the panel shows the raw bytes: that is the evidence to fix the protocol.
 
-## 5. Capture real frames (the first thing to do)
+## 6. Capture real frames (the first thing to do)
 
 The decoder was written from the manual and checked against the manual's worked example, **never against a real module**. Set
-`CONFIG_ARMOR_RADAR_HEX_DUMP=y`, flash, walk in front of each radar, save the console log and run:
+`CONFIG_ARMOR_RADAR_HEX_DUMP=y` in `secrets/<node>.conf`, build, flash, walk in front of each radar, save the console log and run:
 
     python tools/frames_to_fixture.py console.log tests/fixtures/ld2450_real.hex
 
-Then run the host tests: they decode every captured frame and fail if one is not a well-formed LD2450 frame. Send the file, and
-one line saying where you stood relative to the radar (to the left, to the right, how far), and the sideways axis of the radar
-(the assumption Studio makes) can be confirmed or corrected with evidence.
+Then run the host tests: they decode every captured frame and fail if one is not a well-formed LD2450 frame. Send the file, and one line
+saying where you stood relative to the radar (to the left, to the right, how far), and the sideways axis of the radar (the assumption Studio
+makes) can be confirmed or corrected with evidence.
 
-## 6. The 270 degree node
+## 7. The 270 degree node
 
-Each LD2450 sees 120 degrees (plus or minus 60 from where it faces). Mount the three radars **75 degrees apart** and they cover
-270 degrees, with 45 degrees of overlap between neighbours. In Studio, Radar menu, **Add a 270° node** creates the three radars
-already wired to the node as radars 1, 2 and 3 (1 on the left of the middle one, 3 on the right, seen from the node looking
-outwards); move them to where the node stands and set the facing of the middle one. If a real radar shows targets on the wrong
-side, tick *Mirror sideways axis* on it.
+Each LD2450 sees 120 degrees (plus or minus 60 from where it faces). Mount the three radars **75 degrees apart** and they cover 270 degrees,
+with 45 degrees of overlap between neighbours. In Studio, Radar menu, **Add a 270° node** creates the three radars already wired to the node
+as radars 1, 2 and 3 (1 on the left of the middle one, 3 on the right, seen from the node looking outwards); move them to where the node stands
+and set the facing of the middle one. If a real radar shows targets on the wrong side, tick *Mirror sideways axis* on it.
 
-A person standing in the overlap is seen by two radars and counted by both: the alert level does not change, but the target count
-of the node can read two for one person.
+A person standing in the overlap is seen by two radars and counted by both: the alert level does not change, but the target count of the node
+can read two for one person.
 
-## 7. What is not done
+## 8. What is not done
 
-* The radar modules are not configured by the node (their command set is not in the manual available): they run with the settings
-  they have.
+* The radar **command channel** follows the manufacturer's public serial protocol and is unverified against the document and against a module
+  (the panel says so). The serial speed is never changed by the panel.
 * No LD2461 (no document).
-* No TLS unless you put a CA certificate at `certs/ca.pem` and use an `mqtts://` URI. The bench broker is plain MQTT on the LAN.
+* The panel and the API are plain HTTP; the broker link is plain MQTT unless a CA certificate is embedded (`certs/ca.pem`, `mqtts://`).
 * The AHT20 (temperature and humidity) is not read: the message contract has no field for it.
-* Over-the-air updates: flash by cable.
+* The access point's throughput, the roaming of phones between nodes, and the current the PoE module gives are all unmeasured.
+* Studio links to a node's panel by the address the node publishes (a private address: it opens from the same network, not from the Internet); the panel is not proxied through the server.

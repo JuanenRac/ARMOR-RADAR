@@ -16,15 +16,10 @@ namespace armor {
 namespace {
 constexpr char kTag[] = "armor-light";
 constexpr float kUnknown = -1.0f;
-std::atomic<float> g_lux{
-#if CONFIG_ARMOR_LUX_FALLBACK >= 0
-    static_cast<float>(CONFIG_ARMOR_LUX_FALLBACK)
-#else
-    kUnknown
-#endif
-};
+std::atomic<float> g_lux{kUnknown};
+float g_fallback = kUnknown;   // the bench value from the settings, or unknown
+int g_sda = -1, g_scl = -1;
 
-#if CONFIG_ARMOR_LIGHT_VEML7700
 i2c_master_dev_handle_t g_device = nullptr;
 
 bool write_register(std::uint8_t reg, std::uint16_t value) {
@@ -47,14 +42,8 @@ void light_task(void*) {
   for (;;) {
     if (need_settle) {
       if (!write_register(kRegisterConfig, config_word(kLadder[step]))) {
-        if (++failures == 3) ESP_LOGE(kTag, "the VEML7700 does not answer (SDA %d, SCL %d, address 0x%02x)", CONFIG_ARMOR_I2C_SDA, CONFIG_ARMOR_I2C_SCL, kAddress);
-        g_lux.store(
-#if CONFIG_ARMOR_LUX_FALLBACK >= 0
-            static_cast<float>(CONFIG_ARMOR_LUX_FALLBACK)
-#else
-            kUnknown
-#endif
-        );
+        if (++failures == 3) ESP_LOGE(kTag, "the VEML7700 does not answer (SDA %d, SCL %d, address 0x%02x)", g_sda, g_scl, kAddress);
+        g_lux.store(g_fallback);
         vTaskDelay(pdMS_TO_TICKS(2000));
         continue;
       }
@@ -77,15 +66,22 @@ void light_task(void*) {
     vTaskDelay(pdMS_TO_TICKS(1000));
   }
 }
-#endif
 }  // namespace
 
-bool light_sensor_start() {
-#if CONFIG_ARMOR_LIGHT_VEML7700
+bool light_sensor_start(const config::Sensors& sensors) {
+  g_fallback = sensors.lux_fallback >= 0 ? static_cast<float>(sensors.lux_fallback) : kUnknown;
+  g_lux.store(g_fallback);
+  if (!sensors.veml7700) {
+    if (g_fallback >= 0.0f) ESP_LOGW(kTag, "BENCH MODE: no light sensor, every message will carry the fixed value %.0f lx (the light fallback in the settings)", static_cast<double>(g_fallback));
+    else ESP_LOGW(kTag, "no light sensor configured: telemetry is withheld (set a light fallback in the settings for a bench test without the sensor)");
+    return true;
+  }
+  g_sda = sensors.sda;
+  g_scl = sensors.scl;
   i2c_master_bus_config_t bus_config{};
   bus_config.i2c_port = I2C_NUM_0;
-  bus_config.sda_io_num = static_cast<gpio_num_t>(CONFIG_ARMOR_I2C_SDA);
-  bus_config.scl_io_num = static_cast<gpio_num_t>(CONFIG_ARMOR_I2C_SCL);
+  bus_config.sda_io_num = static_cast<gpio_num_t>(sensors.sda);
+  bus_config.scl_io_num = static_cast<gpio_num_t>(sensors.scl);
   bus_config.clk_source = I2C_CLK_SRC_DEFAULT;
   bus_config.glitch_ignore_cnt = 7;
   bus_config.flags.enable_internal_pullup = true;  // the breakout boards carry their own pull-ups; these only help
@@ -98,14 +94,6 @@ bool light_sensor_start() {
   if (i2c_master_bus_add_device(bus, &device_config, &g_device) != ESP_OK) { ESP_LOGE(kTag, "the VEML7700 could not be added to the I2C bus"); return false; }
   xTaskCreate(light_task, "light", 3072, nullptr, 3, nullptr);
   return true;
-#else
-#if CONFIG_ARMOR_LUX_FALLBACK >= 0
-  ESP_LOGW(kTag, "BENCH MODE: no light sensor, every message will carry the fixed value %d lx (CONFIG_ARMOR_LUX_FALLBACK)", CONFIG_ARMOR_LUX_FALLBACK);
-#else
-  ESP_LOGW(kTag, "no light sensor configured: telemetry is withheld (set CONFIG_ARMOR_LUX_FALLBACK for a bench test without the sensor)");
-#endif
-  return true;
-#endif
 }
 
 float light_lux() { return g_lux.load(); }

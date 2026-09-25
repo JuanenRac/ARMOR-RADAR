@@ -4,6 +4,9 @@ rem Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
 rem
 rem   tools\flash.bat perimetro-1 COM5        writes dist\perimetro-1.bin to the board on COM5
 rem   tools\flash.bat perimetro-1 COM5 monitor  ... and then shows its serial log (Ctrl+] leaves)
+rem   tools\flash.bat perimetro-1 COM5 erase    erases the whole flash first: the settings and users of the node go too (a clean start)
+rem
+rem Without "erase" the settings and the users stored in the node survive a new firmware.
 rem
 rem The board is put in download mode by esptool itself over the native USB port. If it does not answer, hold BOOT, press and
 rem release RESET, release BOOT, and run this again.
@@ -23,10 +26,12 @@ if not exist "%ROOT%\dist\%NODE%.bin" (
   echo dist\%NODE%.bin does not exist: build it first with tools/build_node.sh %NODE% ^(from WSL^).
   goto fail
 )
+if /I "%3"=="erase" "%PY%" -m esptool --chip esp32s3 -p %PORT% erase_flash || goto fail
 "%PY%" -m esptool --chip esp32s3 -p %PORT% -b 460800 write_flash 0x0 "%ROOT%\dist\%NODE%.bin" || goto fail
 echo.
 echo Written. Press RESET on the board.
 if /I "%3"=="monitor" "%PY%" -m serial.tools.miniterm %PORT% 115200
+if /I "%4"=="monitor" "%PY%" -m serial.tools.miniterm %PORT% 115200
 goto end
 :usage
 echo usage: tools\flash.bat NODE_ID COMx [monitor]

@@ -15,3 +15,24 @@ CONFIG_ETH_USE_SPI_ETHERNET=y
 CONFIG_ETH_SPI_ETHERNET_W5500=y
 CONFIG_ETH_SPI_ETHERNET_DM9051=n
 CONFIG_ETH_SPI_ETHERNET_KSZ8851SNL=n
+
+# The board has 16 MB of flash: two application slots for over-the-air updates (partitions.csv), and the boot loader goes back to the
+# previous image when a new one does not confirm itself.
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+
+# The ESP32-S3R8 carries 8 MB of octal PSRAM. If it does not answer the node still starts, without it (a wrong guess must not brick a board).
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+CONFIG_SPIRAM_IGNORE_NOTFOUND=y
+CONFIG_SPIRAM_USE_MALLOC=y
+
+# The Wi-Fi access point can be bridged to the Ethernet port (one network for the wired and the wireless side).
+CONFIG_ESP_NETIF_BRIDGE_EN=y
+CONFIG_LWIP_NUM_NETIF_CLIENT_DATA=1
+CONFIG_LWIP_MAX_SOCKETS=16
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=6144

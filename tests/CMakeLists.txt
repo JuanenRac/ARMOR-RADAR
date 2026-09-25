@@ -7,7 +7,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_compile_options(-Wall -Wextra -Wpedantic -Werror)
 
 add_executable(test_core test_core.cpp)
+add_executable(test_node test_node.cpp)
 add_executable(emit_samples emit_samples.cpp)
 
 enable_testing()
 add_test(NAME core COMMAND test_core)
+add_test(NAME node COMMAND test_node)

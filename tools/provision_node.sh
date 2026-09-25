@@ -5,7 +5,8 @@
 #   tools/provision_node.sh perimetro-1 --host 192.168.0.180 --user hydra-umc --key ~/.ssh/id_key [--broker-host 192.168.0.180]
 #
 # Runs ARMOR-DEVOPS's mqtt_identity.sh on the test bench over SSH (its own sudo), captures the password it prints once, and writes it
-# straight into secrets/<node>.conf (mode 600, git-ignored). The password is never shown on the screen. If the identity already exists
+# straight into secrets/<node>.conf (mode 600, git-ignored), together with a setup code for the node's first administrator. Neither is shown on the
+# screen: the build puts them in the node as its FIRST settings, and from then on the node's own web panel is where they change. If the identity already exists
 # the script stops: remove it first (mqtt_identity.sh remove field-node-<node>) to get a new password.
 set -euo pipefail
 NODE="${1:-}"; shift || true
@@ -37,6 +38,11 @@ USER_LINE="$(printf '%s\n' "$RESULT" | grep -o 'user: field-node-[a-z0-9_-]*' | 
 PASS_LINE="$(printf '%s\n' "$RESULT" | grep -o 'password: [A-Za-z0-9]\{16,64\}' | head -1 | sed 's/^password: //')"
 [[ -n "$USER_LINE" && -n "$PASS_LINE" ]] || { echo "the broker did not return an identity" >&2; exit 1; }
 
+# The setup code: 10 characters without look-alikes (no 0, O, 1, I, L). It lets the first administrator be created from the panel of a node
+# that has no cable to a console; the node accepts it only while it has no user.
+SETUP_CODE="$(LC_ALL=C tr -dc 'A-HJKMNP-Z2-9' </dev/urandom | head -c 10)"
+[[ ${#SETUP_CODE} -eq 10 ]] || { echo "could not make a setup code" >&2; exit 1; }
+
 mkdir -p "$ROOT/secrets"
 ( umask 077
   {
@@ -45,6 +51,7 @@ mkdir -p "$ROOT/secrets"
     echo "CONFIG_ARMOR_MQTT_URI=\"mqtt://$BROKER_HOST:$BROKER_PORT\""
     echo "CONFIG_ARMOR_MQTT_USERNAME=\"$USER_LINE\""
     echo "CONFIG_ARMOR_MQTT_PASSWORD=\"$PASS_LINE\""
+    echo "CONFIG_ARMOR_SETUP_CODE=\"$SETUP_CODE\""
     echo "CONFIG_ARMOR_RADAR_COUNT=3"
   } >"$OUT" )
-echo "wrote $OUT (identity $USER_LINE; the password is only in that file)"
+echo "wrote $OUT (identity $USER_LINE; the password and the setup code are only in that file)"

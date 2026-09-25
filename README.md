@@ -6,7 +6,7 @@
 
 <p align="center">🇺🇸 <b>English</b> | <a href="README_spa.md">🇪🇸 Español</a></p>
 
-### Field-node firmware (Waveshare ESP32-S3-ETH, three LD2450 radars, Ethernet) and its host-tested core
+### Field-node firmware (Waveshare ESP32-S3-ETH, three LD2450 radars, Ethernet and Wi-Fi) with its own web panel, and its host-tested core
 
 <p align="center">
   <img src="https://img.shields.io/badge/License-GPL%203.0-blue.svg" alt="GPL 3.0">
@@ -17,18 +17,20 @@
 
 ---
 
-**Honesty check - what runs today:** **Maturity: scaffolding.** The hardware-independent core (167 checks), the **HLK-LD2450 decoder** (written from the Hi-Link manual; its worked example decodes to the manual's values), the VEML7700 conversion and the firmware's JSON (validated by ARMOR-COMMON) are tested on a computer, and the **firmware image builds** in the ESP-IDF 5.4.2 container. **It has never run on a board**: no frame has been captured from a real module, the Ethernet and light-sensor drivers are untried, the LD2461 is not decoded (no document) and the radar modules are not configured by the node.
+**Honesty check - what runs today:** **Maturity: scaffolding.** The hardware-independent core (564 checks: the LD2450 decoder and command channel, the settings and their checks, the pin table, users and sessions, the mapped-pin logic, the network plan and the message serialiser, whose output ARMOR-COMMON accepts) is tested on a computer, the **web panel** was exercised in a real browser against a stand-in node, and the **firmware image builds** in the ESP-IDF 5.4.2 container. **It has never run on a board**: no frame has been captured from a real module, the Ethernet, Wi-Fi bridge, light-sensor and update code are untried, the radar command channel is unchecked against the manufacturer's document and against a module, the panel is plain HTTP, and the LD2461 is not decoded (no document).
 
 ---
 
 ## 1. 🛠️ OVERVIEW
 
-* **Two nodes of 270 degrees:** each Waveshare ESP32-S3-ETH reads up to three LD2450 radars on its three UARTs, mounted 75 degrees apart, over wired Ethernet (W5500) with DHCP or a fixed address. Studio's *Add a 270° node* creates the three radars already wired to the node.
-* **Resynchronising framer and LD2450 decoder:** finds frames in a noisy UART stream by header, length and tail, drops one byte on a mismatch and carries on; each 30-byte frame gives up to three targets (x, y, speed, distance gate) that become contract tracks. A radar that stops reporting leaves no ghost targets.
-* **Radar health on the console:** per radar, bytes, good and bad frames every ten seconds, and why a radar is not reporting. Telemetry is withheld while no radar reports, never an empty 'all clear'.
-* **VEML7700 ambient light** with automatic range and the datasheet's correction. Without the sensor the node withholds telemetry, or sends an explicit bench value that it logs at every start.
-* **Contract-exact messages:** the telemetry and health JSON follow the published schemas (15 tracks, 5 per sensor, lux range, node-id pattern) and refuse to write anything invalid; timestamps are wall-clock (SNTP) and an MQTT last will announces `offline`.
-* **Bench tools:** one image per node from its own settings file, provisioning of the broker identity without showing the password, flashing over USB, and a converter from a log of raw frames to a test fixture ([bench bring-up](docs/BENCH_BRINGUP.md)).
+* **Two nodes of 270 degrees:** each Waveshare ESP32-S3-ETH reads up to three LD2450 radars on its three UARTs, mounted 75 degrees apart, over wired Ethernet (W5500) with DHCP or a fixed address, powered by PoE or USB. Studio's *Add a 270° node* creates the three radars already wired to the node.
+* **A web panel on every node,** in the look of Studio and its seven languages, embedded in the firmware: overview, network, Wi-Fi, broker, radars, pins, users, firmware update and log. A node with no user opens the Wi-Fi `ARMOR-SETUP-xxxxxx` and creates its first administrator with a set-up code; passwords are salted PBKDF2, sessions are random tokens, and every setting lives in the node's flash, so one image serves every node and no password is compiled in ([the panel](docs/NODE_PANEL.md)).
+* **One Wi-Fi from many nodes:** each node can offer an access point joined to its Ethernet port; give the nodes the same name and password and the channel on automatic (1, 6 or 11 by MAC) and phones and Wi-Fi sensors see one network with one DHCP server. It is not a radio mesh: every node keeps its cable.
+* **Pins for the server:** any free pin becomes an input, an output (with a safe state when the broker is lost), PWM or an analogue reading, and appears as a device of the server, so a relay or a contact needs no new firmware. The board's reserved pins are never offered.
+* **Over-the-air updates with rollback** from the panel (two slots on the 16 MB flash), and a **link from Studio** to each node's panel, from the address the node publishes.
+* **LD2450 decoder, health and configuration:** a resynchronising framer finds frames in a noisy stream; each 30-byte frame gives up to three targets that become contract tracks; the console and the panel say per radar whether it reports, is silent or garbled. The panel can also read the module's version, choose one or three targets and set detection zones (a protocol that is unchecked against a module).
+* **Ambient light and contract-exact messages:** the VEML7700 with automatic range; telemetry, health and information JSON that follow the published schemas and refuse to write anything invalid, with wall-clock timestamps (SNTP) and an MQTT last will. Telemetry is withheld while no radar reports, never an empty 'all clear'.
+* **Bench tools:** provisioning of the broker identity and the set-up code without showing them, flashing over USB, a stand-in node for working on the panel, and a converter from a log of raw frames to a test fixture ([bench bring-up](docs/BENCH_BRINGUP.md)).
 
 ---
 
@@ -36,8 +38,9 @@
 
 ```bash
 cmake -S tests -B build/host && cmake --build build/host
-build/host/test_core                                  # 167 checks, -Werror
+build/host/test_core && build/host/test_node          # 564 checks, -Werror
 build/host/emit_samples | python tests/check_contract.py
+node tools/panel_mock.mjs --user admin:adminpass123   # the panel without a board
 tools/provision_node.sh perimetro-1 --host <cm5> --user <user> --key <key>
 tools/build_node.sh perimetro-1                       # one image in dist/, in the ESP-IDF container
 ```
@@ -46,7 +49,7 @@ tools/build_node.sh perimetro-1                       # one image in dist/, in t
 tools\flash.bat perimetro-1 COM5 monitor
 ```
 
-The host tests need any C++17 compiler (Linux, WSL, MSYS2). See the [bench bring-up](docs/BENCH_BRINGUP.md) and the [hardware boundary](docs/HARDWARE_BOUNDARY.md).
+The host tests need any C++17 compiler (Linux, WSL, MSYS2). See the [bench bring-up](docs/BENCH_BRINGUP.md), the [panel](docs/NODE_PANEL.md) and the [hardware boundary](docs/HARDWARE_BOUNDARY.md).
 
 ---
 
@@ -55,16 +58,22 @@ The host tests need any C++17 compiler (Linux, WSL, MSYS2). See the [bench bring
 ```text
 ARMOR-RADAR/
 ├── main/
-│   ├── app_main.cpp        tasks: radars, network, MQTT, statistics
-│   ├── board_ethernet.cpp  W5500 over SPI
-│   ├── light_sensor.cpp    VEML7700 over I2C
-│   ├── Kconfig.projbuild   every pin and setting
-│   └── core/               framer, ld2450, veml7700, radar_health, telemetry_json, climate, static_map, node_id
-├── tests/                  test_core.cpp, emit_samples.cpp, check_contract.py, test_tools.py
-├── tools/                  build_node.sh, provision_node.sh, flash.bat, frames_to_fixture.py
+│   ├── app_main.cpp        start-up: settings, radars, pins, network, panel, broker
+│   ├── node_store.cpp      settings and users in flash
+│   ├── network.cpp         Ethernet, Wi-Fi access point and bridge, station
+│   ├── web_server.cpp      the panel and its JSON API, login, update
+│   ├── radar_manager.cpp   UARTs, frames, health, command channel
+│   ├── gpio_manager.cpp    the pins mapped for the server
+│   ├── mqtt_link.cpp       clock, health, telemetry, information, pin topics
+│   ├── board_ethernet.cpp, light_sensor.cpp, log_buffer.cpp, entropy.cpp
+│   ├── Kconfig.projbuild   the first settings of a build
+│   └── core/               framer, ld2450, ld2450_command, node_config, board_pins, network_plan, auth, gpio_logic, json, veml7700, telemetry_json...
+├── panel/                  index.html, app.js, text.js (7 languages), style.css
+├── tests/                  test_core.cpp, test_node.cpp, emit_samples.cpp, check_contract.py, test_tools.py
+├── tools/                  build_node.sh, provision_node.sh, flash.bat, pack_panel.py, panel_mock.mjs, frames_to_fixture.py
 ├── secrets/                node.conf.example (the real files are git-ignored)
-├── sdkconfig.defaults
-└── docs/                   BENCH_BRINGUP.md, HARDWARE_BOUNDARY.md
+├── partitions.csv, sdkconfig.defaults
+└── docs/                   BENCH_BRINGUP.md, NODE_PANEL.md, HARDWARE_BOUNDARY.md
 ```
 
 ---

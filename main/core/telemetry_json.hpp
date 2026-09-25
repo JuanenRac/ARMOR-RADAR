@@ -11,6 +11,10 @@
 #include <cstdint>
 #include <cstdio>
 #include <string_view>
+#include <cstring>
+#include <string>
+#include "json.hpp"
+#include "net_text.hpp"
 #include "node_id.hpp"
 #include "../radar_tracks.hpp"
 
@@ -18,7 +22,7 @@ namespace armor {
 
 constexpr float kMaxLux = 200000.0f;
 
-enum class JsonResult { kOk, kInvalidNodeId, kInvalidLux, kTooManyTracks, kInvalidTrack, kBufferTooSmall };
+enum class JsonResult { kOk, kInvalidNodeId, kInvalidLux, kTooManyTracks, kInvalidTrack, kBufferTooSmall, kInvalidInfo };
 
 namespace detail {
 // Append with bounds checking; the position moves past the buffer on overflow so the caller can detect it.
@@ -66,6 +70,34 @@ inline JsonResult build_health(std::string_view node_id, std::uint64_t timestamp
                  node_id.data(), static_cast<unsigned long long>(timestamp_ms), online ? "true" : "false");
   if (position >= capacity) return JsonResult::kBufferTooSmall;
   length = position;
+  return JsonResult::kOk;
+}
+
+// The information message: armor/node/{node_id}/info  {"node_id","timestamp_ms","name","firmware","ip","port"}. It lets a console offer a link to the
+// node's own web panel. Nothing is written unless every field satisfies the contract (name 1 to 48 characters of valid UTF-8, firmware x.y.z,
+// a dotted-quad IPv4 address without leading zeros, port 1 to 65535).
+inline JsonResult build_info(std::string_view node_id, std::uint64_t timestamp_ms, std::string_view name, std::string_view firmware, std::string_view ip, unsigned port,
+                             char* out, std::size_t capacity, std::size_t& length) {
+  length = 0;
+  if (!node_id_is_valid(node_id)) return JsonResult::kInvalidNodeId;
+  std::size_t characters = 0;
+  if (!net::valid_utf8(name, &characters) || characters < 1 || characters > 48) return JsonResult::kInvalidInfo;
+  std::uint32_t address = 0;
+  if (!net::parse_ipv4(ip, address) || port < 1 || port > 65535) return JsonResult::kInvalidInfo;
+  int dots = 0;
+  bool digit_before = false, ok = !firmware.empty();
+  for (const char c : firmware) {
+    if (c >= '0' && c <= '9') digit_before = true;
+    else if (c == '.' && digit_before) { ++dots; digit_before = false; }
+    else ok = false;
+  }
+  if (!ok || dots != 2 || !digit_before) return JsonResult::kInvalidInfo;
+  json::Writer w;
+  w.begin_object().field("node_id", node_id).key("timestamp_ms").integer(static_cast<long long>(timestamp_ms)).field("name", name).field("firmware", firmware).field("ip", ip)
+      .key("port").integer(port).end_object();
+  if (w.str().size() + 1 > capacity) return JsonResult::kBufferTooSmall;
+  std::memcpy(out, w.str().data(), w.str().size());
+  length = w.str().size();
   return JsonResult::kOk;
 }
 
