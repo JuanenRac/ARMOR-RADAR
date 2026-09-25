@@ -17,13 +17,13 @@
 
 ---
 
-**Honesty check - what runs today:** **Maturity: scaffolding.** The hardware-independent core (77 checks) and the firmware's JSON (validated by ARMOR-COMMON) are real. `main/app_main.cpp` is **not compiled here** (it needs ESP-IDF 5.x and a board), and the LD2450/LD2461 frame layout is **deliberately not decoded**: it must come from the vendor protocol document and captured UART data, so no track is ever invented.
+**Honesty check - what runs today:** **Maturity: scaffolding.** The hardware-independent core (124 checks), the **HLK-LD2450 decoder** (written from the Hi-Link manual; its worked example decodes to the manual's values) and the firmware's JSON (validated by ARMOR-COMMON) are real. `main/app_main.cpp` is **not compiled here** (it needs ESP-IDF 5.x and a board), **no frame has been captured from a real module**, the LD2461 is not decoded (no document), and telemetry is withheld until a light-sensor driver exists.
 
 ---
 
 ## 1. 🛠️ OVERVIEW
 
-* **Resynchronising framer:** finds frames in a noisy UART stream by header, length and tail, drops one byte on a mismatch and carries on. Its protocol spec for the real radar is unconfigured until the vendor document is added.
+* **Resynchronising framer and LD2450 decoder:** finds frames in a noisy UART stream by header, length and tail, drops one byte on a mismatch and carries on; each 30-byte frame gives up to three targets (x, y, speed, distance gate) that become contract tracks. A radar that stops reporting leaves no ghost targets.
 * **Contract-exact messages:** the telemetry and health JSON follow the published schemas (15 tracks, 5 per sensor, lux range, node-id pattern) and refuse to write anything invalid.
 * **Climate and light logic:** dew point (Magnus), an anti-fog PTC heater controller with hysteresis that switches off on any bad reading, and a local day/night decision.
 * **Static-reflector map:** learned only during an operator's calibration and applied only to echoes that are both at a learned position and stationary, so a person standing still is never hidden.
@@ -35,7 +35,7 @@
 
 ```bash
 cmake -S tests -B build/host && cmake --build build/host
-build/host/test_core                                  # 77 checks, -Werror
+build/host/test_core                                  # 124 checks, -Werror
 build/host/emit_samples | python tests/check_contract.py
 idf.py build                                          # firmware, needs ESP-IDF 5.x
 ```
@@ -50,7 +50,7 @@ The host tests need any C++17 compiler (Linux, WSL, MSYS2). See the [hardware bo
 ARMOR-RADAR/
 ├── main/
 │   ├── app_main.cpp        firmware (needs ESP-IDF)
-│   └── core/               framer, telemetry_json, climate, static_map, node_id
+│   └── core/               framer, ld2450, telemetry_json, climate, static_map, node_id
 ├── tests/                  test_core.cpp, emit_samples.cpp, check_contract.py
 ├── Kconfig.projbuild, sdkconfig.defaults
 └── docs/HARDWARE_BOUNDARY.md

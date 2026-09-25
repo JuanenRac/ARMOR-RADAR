@@ -17,13 +17,13 @@
 
 ---
 
-**Comprobación de honestidad - qué funciona hoy:** **Madurez: scaffolding.** El núcleo independiente del hardware (77 comprobaciones) y el JSON del firmware (validado por ARMOR-COMMON) son reales. `main/app_main.cpp` **no se compila aquí** (necesita ESP-IDF 5.x y una placa), y el formato de trama del LD2450/LD2461 **no se decodifica a propósito**: debe salir del documento de protocolo del fabricante y de capturas UART reales, de modo que nunca se inventa una pista.
+**Comprobación de honestidad - qué funciona hoy:** **Madurez: scaffolding.** El núcleo independiente del hardware (124 comprobaciones), el **decodificador del HLK-LD2450** (escrito a partir del manual de Hi-Link; su ejemplo resuelto da los valores del manual) y el JSON del firmware (validado por ARMOR-COMMON) son reales. `main/app_main.cpp` **no se compila aquí** (necesita ESP-IDF 5.x y una placa), **no se ha capturado ninguna trama de un módulo real**, el LD2461 no se decodifica (no hay documento) y la telemetría se retiene hasta que exista un driver del sensor de luz.
 
 ---
 
 ## 1. 🛠️ DESCRIPCIÓN
 
-* **Delimitador que se resincroniza:** encuentra tramas en un flujo UART ruidoso por cabecera, longitud y cola, descarta un byte si no coincide y sigue. Su especificación para el radar real está sin configurar hasta añadir el documento del fabricante.
+* **Delimitador que se resincroniza y decodificador LD2450:** encuentra tramas en un flujo UART ruidoso por cabecera, longitud y cola, descarta un byte si no coincide y sigue; cada trama de 30 bytes da hasta tres objetivos (x, y, velocidad, puerta de distancia) que pasan a ser pistas del contrato. Un radar que deja de informar no deja objetivos fantasma.
 * **Mensajes exactos al contrato:** el JSON de telemetría y salud sigue los esquemas publicados (15 pistas, 5 por sensor, rango de lux, patrón de identificador) y se niega a escribir algo inválido.
 * **Lógica de clima y luz:** punto de rocío (Magnus), un control del calefactor PTC antivaho con histéresis que se apaga ante cualquier lectura errónea, y una decisión día/noche local.
 * **Mapa de reflectores estáticos:** se aprende solo durante una calibración del operador y se aplica solo a ecos que están en una posición aprendida y quietos, de modo que una persona parada nunca se oculta.
@@ -35,7 +35,7 @@
 
 ```bash
 cmake -S tests -B build/host && cmake --build build/host
-build/host/test_core                                  # 77 comprobaciones, -Werror
+build/host/test_core                                  # 124 comprobaciones, -Werror
 build/host/emit_samples | python tests/check_contract.py
 idf.py build                                          # firmware, necesita ESP-IDF 5.x
 ```
@@ -50,7 +50,7 @@ Los tests en el ordenador necesitan cualquier compilador C++17 (Linux, WSL, MSYS
 ARMOR-RADAR/
 ├── main/
 │   ├── app_main.cpp        firmware (necesita ESP-IDF)
-│   └── core/               framer, telemetry_json, climate, static_map, node_id
+│   └── core/               framer, ld2450, telemetry_json, climate, static_map, node_id
 ├── tests/                  test_core.cpp, emit_samples.cpp, check_contract.py
 ├── Kconfig.projbuild, sdkconfig.defaults
 └── docs/HARDWARE_BOUNDARY.md

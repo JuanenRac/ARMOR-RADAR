@@ -3,6 +3,7 @@
 // Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
 #include <cstdio>
 #include <vector>
+#include "../main/core/ld2450.hpp"
 #include "../main/core/telemetry_json.hpp"
 
 using namespace armor;
@@ -28,5 +29,16 @@ int main() {
   emit("telemetry", build_telemetry("node_2-b", 3000, 200000.0f, fifteen.data(), fifteen.size(), out, sizeof out, length));
   const Track extreme[] = {Track{3, 255, 32767, -32768, -32768}};
   emit("telemetry", build_telemetry("a", 4294967296ULL, 12345.6f, extreme, 1, out, sizeof out, length));
+  // The manual's worked example, decoded and serialised: proof that real frames yield contract-valid messages.
+  const std::uint8_t manual[30] = {0xAA, 0xFF, 0x03, 0x00, 0x0E, 0x03, 0xB1, 0x86, 0x10, 0x00, 0x40, 0x01, 0x00, 0x00, 0x00,
+                                   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x55, 0xCC};
+  ld2450::Frame frame;
+  Track decoded[ld2450::kTargetsPerFrame];
+  if (ld2450::decode_frame(manual, sizeof manual, frame)) {
+    const std::size_t count = ld2450::to_tracks(1, frame, decoded);
+    emit("telemetry", build_telemetry("north-1", 5000, 12.0f, decoded, count, out, sizeof out, length));
+  } else {
+    std::printf("ERROR ld2450\n");
+  }
   return 0;
 }
