@@ -9,8 +9,10 @@
 #include "../main/core/frame_framer.hpp"
 #include "../main/core/ld2450.hpp"
 #include "../main/core/node_id.hpp"
+#include "../main/core/radar_health.hpp"
 #include "../main/core/static_map.hpp"
 #include "../main/core/telemetry_json.hpp"
+#include "../main/core/veml7700.hpp"
 
 static int failures = 0;
 static int checks = 0;
@@ -354,6 +356,96 @@ static void test_track_set() {
   CHECK(set.collect(out, 2100) == kTracksPerRadar);
 }
 
+static bool near(float a, float b, float tolerance) { return std::fabs(a - b) <= tolerance; }
+
+static void test_veml7700() {
+  using namespace armor::veml7700;
+  // The datasheet's figures: 0.0036 lx per count at gain x2 and 800 ms, and 0.0576 at gain x1 and 100 ms.
+  CHECK(near(resolution_lux_per_count({Gain::kX2, Integration::kMs800}), 0.0036f, 1e-6f));
+  CHECK(near(resolution_lux_per_count({Gain::kX1, Integration::kMs100}), 0.0576f, 1e-5f));
+  CHECK(near(resolution_lux_per_count({Gain::kX1_8, Integration::kMs25}), 0.0036f * 32 * 16, 1e-4f));  // the coarsest setting
+  // Registers: the configuration word puts the gain in bits 12:11 and the integration time in bits 9:6.
+  CHECK(config_word({Gain::kX1, Integration::kMs100}) == 0x0000);
+  CHECK(config_word({Gain::kX2, Integration::kMs800}) == ((1u << 11) | (0b0011u << 6)));
+  CHECK(config_word({Gain::kX1_8, Integration::kMs25}) == ((2u << 11) | (0b1100u << 6)));
+  CHECK((config_word({Gain::kX1_4, Integration::kMs50}) & 1u) == 0);  // never asks for shutdown
+  // Conversion: low light is nearly linear, high light gets the correction.
+  CHECK(near(lux_from_counts(1000, {Gain::kX1, Integration::kMs100}), 58.0f, 0.1f));  // 57.6 lx raw, +0.7 % from the polynomial
+  CHECK(lux_from_counts(0, {Gain::kX1, Integration::kMs100}) == 0.0f);
+  const float high_raw = 30000 * resolution_lux_per_count({Gain::kX1_8, Integration::kMs25});
+  CHECK(lux_from_counts(30000, {Gain::kX1_8, Integration::kMs25}) > high_raw);  // the polynomial lifts the compressed top end
+  // Range selection walks the ladder in the right direction and stops at both ends.
+  CHECK(next_step(kStartStep, 30000) == kStartStep);
+  CHECK(next_step(kStartStep, 65000) == kStartStep - 1);
+  CHECK(next_step(kStartStep, 10) == kStartStep + 1);
+  CHECK(next_step(0, 65535) == 0);
+  CHECK(next_step(kLadderSteps - 1, 0) == kLadderSteps - 1);
+  CHECK(next_step(999, 0) == kStartStep);
+  CHECK(reading_is_trustworthy(kStartStep, 5000) && !reading_is_trustworthy(kStartStep, 5));
+  // The ladder really goes from the coarsest to the finest resolution, and each step needs longer to settle than a reading takes.
+  for (std::size_t i = 1; i < kLadderSteps; ++i) CHECK(resolution_lux_per_count(kLadder[i]) <= resolution_lux_per_count(kLadder[i - 1]));
+  CHECK(settle_ms({Gain::kX2, Integration::kMs800}) >= 1600);
+  // A full dark room resolves to well under a lux at the top of the ladder; direct sun still fits at the bottom.
+  CHECK(lux_from_counts(1, kLadder[kLadderSteps - 1]) < 0.01f);
+  CHECK(lux_from_counts(65535, kLadder[0]) > 100000.0f);
+}
+
+static void test_radar_health() {
+  RadarHealth health(3000);
+  CHECK(health.state(1, 1000) == RadarState::kNoData);
+  health.bytes_received(1, 40);
+  CHECK(health.state(1, 1000) == RadarState::kGarbled);
+  health.frame_bad(1);
+  CHECK(health.counters(1).bad_frames == 1 && health.counters(1).bytes == 40);
+  health.frame_ok(1, 2000);
+  CHECK(health.state(1, 2500) == RadarState::kReporting);
+  CHECK(health.state(1, 5001) == RadarState::kSilent);
+  CHECK(health.state(1, 5000) == RadarState::kReporting);
+  // The radars are independent, and a radar number outside 1..3 is ignored.
+  CHECK(health.state(2, 2500) == RadarState::kNoData && health.state(3, 2500) == RadarState::kNoData);
+  health.frame_ok(9, 100);
+  health.bytes_received(0, 5);
+  CHECK(health.counters(2).frames == 0);
+  CHECK(health.state(9, 0) == RadarState::kNoData);
+  for (RadarState state : {RadarState::kNoData, RadarState::kGarbled, RadarState::kSilent, RadarState::kReporting}) CHECK(RadarHealth::describe(state)[0] != '?');
+}
+
+// Three radars on one node, each looking 75 degrees from the next, cover 270 degrees: the geometry Studio's "270 degree node" uses.
+static void test_270_degree_layout() {
+  const double half_angle = 60.0, spacing = 75.0;
+  const double covered = 2 * half_angle + 2 * spacing;  // the outer edges of the two outer radars
+  CHECK(covered == 270.0);
+  CHECK(spacing < 2 * half_angle);  // neighbouring radars overlap, so no gap opens between them
+  CHECK(2 * half_angle - spacing == 45.0);  // and the overlap is 45 degrees
+}
+
+// Real frames captured from a node (tools/frames_to_fixture.py), when the file exists: the decoder's first check against a real module.
+static void test_real_frames_fixture() {
+  std::string path = __FILE__;
+  path = path.substr(0, path.find_last_of("/\\") + 1) + "fixtures/ld2450_real.hex";
+  std::FILE* file = std::fopen(path.c_str(), "r");
+  if (file == nullptr) { std::printf("note: no tests/fixtures/ld2450_real.hex yet (capture real frames on the bench)\n"); return; }
+  char line[256];
+  int frames = 0;
+  while (std::fgets(line, sizeof line, file) != nullptr) {
+    if (line[0] == '#' || line[0] == '\n') continue;
+    char radar = 0;
+    char hex[128] = {0};
+    if (std::sscanf(line, "r%c %127s", &radar, hex) != 2) { CHECK(false && "malformed fixture line"); continue; }
+    std::uint8_t bytes[ld2450::kFrameLength] = {0};
+    const std::size_t digits = std::strlen(hex);
+    CHECK(digits == ld2450::kFrameLength * 2);
+    if (digits != ld2450::kFrameLength * 2) continue;
+    for (std::size_t i = 0; i < ld2450::kFrameLength; ++i) { unsigned value = 0; std::sscanf(hex + 2 * i, "%2x", &value); bytes[i] = static_cast<std::uint8_t>(value); }
+    ld2450::Frame frame;
+    CHECK(ld2450::decode_frame(bytes, ld2450::kFrameLength, frame));
+    for (const ld2450::Target& target : frame.targets) if (target.present) CHECK(std::abs(target.x_mm) <= 32767 && target.y_mm >= -32767 && target.resolution_mm > 0);
+    ++frames;
+  }
+  std::fclose(file);
+  std::printf("real fixture: %d frames decoded\n", frames);
+}
+
 int main() {
   test_node_id();
   test_framer();
@@ -365,6 +457,10 @@ int main() {
   test_ld2450();
   test_ld2450_stream();
   test_track_set();
+  test_veml7700();
+  test_radar_health();
+  test_270_degree_layout();
+  test_real_frames_fixture();
   std::printf("%d checks, %d failures\n", checks, failures);
   return failures == 0 ? 0 : 1;
 }

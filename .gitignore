@@ -3,3 +3,11 @@ build/
 sdkconfig
 sdkconfig.old
 managed_components/
+dist/
+tools/.venv/
+certs/
+secrets/*
+!secrets/node.conf.example
+tests/fixtures/*.tmp
+*.log
+__pycache__/

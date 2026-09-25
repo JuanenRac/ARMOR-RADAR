@@ -6,7 +6,7 @@
 
 <p align="center"><a href="README.md">🇺🇸 English</a> | 🇪🇸 <b>Español</b></p>
 
-### Firmware del nodo de campo y su núcleo probado en el ordenador
+### Firmware del nodo de campo (Waveshare ESP32-S3-ETH, tres radares LD2450, Ethernet) y su núcleo probado en el ordenador
 
 <p align="center">
   <img src="https://img.shields.io/badge/License-GPL%203.0-blue.svg" alt="GPL 3.0">
@@ -17,17 +17,18 @@
 
 ---
 
-**Comprobación de honestidad - qué funciona hoy:** **Madurez: scaffolding.** El núcleo independiente del hardware (124 comprobaciones), el **decodificador del HLK-LD2450** (escrito a partir del manual de Hi-Link; su ejemplo resuelto da los valores del manual) y el JSON del firmware (validado por ARMOR-COMMON) son reales. `main/app_main.cpp` **no se compila aquí** (necesita ESP-IDF 5.x y una placa), **no se ha capturado ninguna trama de un módulo real**, el LD2461 no se decodifica (no hay documento) y la telemetría se retiene hasta que exista un driver del sensor de luz.
+**Comprobación de honestidad - qué funciona hoy:** **Madurez: scaffolding.** El núcleo independiente del hardware (167 comprobaciones), el **decodificador del HLK-LD2450** (escrito a partir del manual de Hi-Link; su ejemplo resuelto da los valores del manual), la conversión del VEML7700 y el JSON del firmware (validado por ARMOR-COMMON) se prueban en el ordenador, y la **imagen del firmware compila** en el contenedor de ESP-IDF 5.4.2. **Nunca se ha ejecutado en una placa**: no se ha capturado ninguna trama de un módulo real, los controladores de Ethernet y del sensor de luz no se han probado, el LD2461 no se decodifica (sin documento) y el nodo no configura los módulos de radar.
 
 ---
 
 ## 1. 🛠️ DESCRIPCIÓN
 
+* **Dos nodos de 270 grados:** cada Waveshare ESP32-S3-ETH lee hasta tres radares LD2450 en sus tres UART, montados con 75 grados de separación, por Ethernet cableada (W5500) con DHCP o dirección fija. *Añadir un nodo de 270°* en Studio crea los tres radares ya asignados al nodo.
 * **Delimitador que se resincroniza y decodificador LD2450:** encuentra tramas en un flujo UART ruidoso por cabecera, longitud y cola, descarta un byte si no coincide y sigue; cada trama de 30 bytes da hasta tres objetivos (x, y, velocidad, puerta de distancia) que pasan a ser pistas del contrato. Un radar que deja de informar no deja objetivos fantasma.
-* **Mensajes exactos al contrato:** el JSON de telemetría y salud sigue los esquemas publicados (15 pistas, 5 por sensor, rango de lux, patrón de identificador) y se niega a escribir algo inválido.
-* **Lógica de clima y luz:** punto de rocío (Magnus), un control del calefactor PTC antivaho con histéresis que se apaga ante cualquier lectura errónea, y una decisión día/noche local.
-* **Mapa de reflectores estáticos:** se aprende solo durante una calibración del operador y se aplica solo a ecos que están en una posición aprendida y quietos, de modo que una persona parada nunca se oculta.
-* **Arranque seguro:** el nodo se niega a arrancar con una identidad inválida o de ejemplo o con pines de radar duplicados, usa hora real (SNTP) en las marcas de tiempo y anuncia `offline` mediante un last will de MQTT.
+* **Salud de los radares en la consola:** por radar, bytes, tramas buenas y malas cada diez segundos, y por qué un radar no informa. La telemetría se retiene mientras ningún radar informa, nunca un «todo despejado» vacío.
+* **Luz ambiente VEML7700** con rango automático y la corrección de la hoja de datos. Sin el sensor el nodo retiene la telemetría, o envía un valor de banco explícito que registra en cada arranque.
+* **Mensajes exactos al contrato:** el JSON de telemetría y salud sigue los esquemas publicados (15 pistas, 5 por sensor, rango de lux, patrón de identificador) y se niega a escribir algo inválido; las marcas de tiempo son hora real (SNTP) y un last will de MQTT anuncia `offline`.
+* **Herramientas de banco:** una imagen por nodo desde su propio fichero de ajustes, alta de la identidad en el broker sin mostrar la contraseña, grabación por USB y un conversor de un registro de tramas en bruto a un fixture de pruebas ([puesta en marcha](docs/BENCH_BRINGUP.md)).
 
 ---
 
@@ -35,12 +36,17 @@
 
 ```bash
 cmake -S tests -B build/host && cmake --build build/host
-build/host/test_core                                  # 124 comprobaciones, -Werror
+build/host/test_core                                  # 167 comprobaciones, -Werror
 build/host/emit_samples | python tests/check_contract.py
-idf.py build                                          # firmware, necesita ESP-IDF 5.x
+tools/provision_node.sh perimetro-1 --host <cm5> --user <usuario> --key <clave>
+tools/build_node.sh perimetro-1                       # una imagen en dist/, en el contenedor de ESP-IDF
 ```
 
-Los tests en el ordenador necesitan cualquier compilador C++17 (Linux, WSL, MSYS2). Véase el [límite de hardware](docs/HARDWARE_BOUNDARY.md).
+```bat
+tools\flash.bat perimetro-1 COM5 monitor
+```
+
+Los tests en el ordenador necesitan cualquier compilador C++17 (Linux, WSL, MSYS2). Véanse la [puesta en marcha](docs/BENCH_BRINGUP.md) y el [límite del hardware](docs/HARDWARE_BOUNDARY.md).
 
 ---
 
@@ -49,11 +55,16 @@ Los tests en el ordenador necesitan cualquier compilador C++17 (Linux, WSL, MSYS
 ```text
 ARMOR-RADAR/
 ├── main/
-│   ├── app_main.cpp        firmware (necesita ESP-IDF)
-│   └── core/               framer, ld2450, telemetry_json, climate, static_map, node_id
-├── tests/                  test_core.cpp, emit_samples.cpp, check_contract.py
-├── Kconfig.projbuild, sdkconfig.defaults
-└── docs/HARDWARE_BOUNDARY.md
+│   ├── app_main.cpp        tareas: radares, red, MQTT, estadísticas
+│   ├── board_ethernet.cpp  W5500 por SPI
+│   ├── light_sensor.cpp    VEML7700 por I2C
+│   ├── Kconfig.projbuild   cada pin y ajuste
+│   └── core/               framer, ld2450, veml7700, radar_health, telemetry_json, climate, static_map, node_id
+├── tests/                  test_core.cpp, emit_samples.cpp, check_contract.py, test_tools.py
+├── tools/                  build_node.sh, provision_node.sh, flash.bat, frames_to_fixture.py
+├── secrets/                node.conf.example (los reales están fuera de git)
+├── sdkconfig.defaults
+└── docs/                   BENCH_BRINGUP.md, HARDWARE_BOUNDARY.md
 ```
 
 ---

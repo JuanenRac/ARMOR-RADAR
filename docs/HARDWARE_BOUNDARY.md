@@ -4,13 +4,14 @@
 
 | Part | Where it runs | Evidence |
 |---|---|---|
-| The core in `main/core` (framer, LD2450 decoder, track set, message serialiser, dew point and heater, day/night, static map, node id) | Any computer with CMake and a C++17 compiler | `tests/test_core.cpp` (124 checks, `-Werror`) |
+| The core in `main/core` (framer, LD2450 decoder, track set, message serialiser, dew point and heater, day/night, static map, node id) | Any computer with CMake and a C++17 compiler | `tests/test_core.cpp` (167 checks, `-Werror`) |
 | The firmware's JSON against the published contract | A computer | `tests/emit_samples.cpp` piped into `tests/check_contract.py`, validated by ARMOR-COMMON |
-| `main/app_main.cpp` (UARTs, MQTT, SNTP, tasks) | ESP-IDF 5.x on a board | **not compiled here**; build it with `idf.py build` before use |
+| `main/app_main.cpp`, `board_ethernet.cpp`, `light_sensor.cpp` (UARTs, W5500, I2C, MQTT, SNTP, tasks) | ESP-IDF 5.4 | **builds** in the `espressif/idf:v5.4.2` container (`tools/build_node.sh`); **never run on a board** |
 
 Run `build-test` from ARMOR-COMMON's launcher (or the commands in the README) for
 the host part. Without ESP-IDF the run states that the firmware image was **not**
-built.
+built; `tools/build_node.sh` builds it in the container. The first day on a board is
+[BENCH_BRINGUP.md](BENCH_BRINGUP.md).
 
 ## The three radars
 
@@ -20,9 +21,9 @@ console to the native USB Serial/JTAG peripheral. Confirm on the real board that
 connector is wired to the ESP32-S3 native USB before relying on this. Duplicate RX pins
 are refused at start.
 
-The AHT20 and VEML7700 share I2C. The VEML7700 interrupt pin is intentionally not assumed
-until the final ESP32-S3-ETH-PoE board pinout is selected. Firmware must fail closed if a
-configured UART or I2C device cannot be initialised.
+The target board is the **Waveshare ESP32-S3-ETH**: Ethernet is a W5500 on SPI (MOSI 11, MISO 12, SCLK 13, CS 14, INT 10, RST 9, from the manufacturer's pin table), GPIO 4 to 7 belong to the SD-card socket, and the default radar receive pins are GPIO 16, 17 and 18. All of them are menuconfig values, and the node refuses to start if a radar pin repeats or clashes with the Ethernet or I2C pins.
+
+The VEML7700 is read on I2C (GPIO 1 and 2 by default), its interrupt pin is not used. The AHT20 is not read: the message contract has no field for it. Firmware must fail closed if a configured UART or I2C device cannot be initialised: without a light value the node withholds telemetry, unless `CONFIG_ARMOR_LUX_FALLBACK` sets an explicit bench value.
 
 ## The LD2450 frame decoder
 
@@ -48,9 +49,9 @@ What the manual does **not** say, and the code therefore does not claim:
 No frame has been captured from a real module yet. The first thing to do on the bench is to
 record real UART bytes into a test fixture and check them against this decoder.
 
-The firmware still withholds telemetry until an ambient-light reading exists (no light-sensor
-driver yet), because the contract requires `lux` and a made-up value would mislead the
-server's day/night decisions.
+The firmware withholds telemetry until an ambient-light reading exists, because the contract
+requires `lux` and a made-up value would mislead the server's day/night decisions. It also
+withholds it while no radar is reporting, so silent radars never look like a quiet perimeter.
 
 ## Identity, time and offline detection
 
@@ -66,5 +67,5 @@ server's day/night decisions.
 
 ## Not decided or not proven
 
-Ethernet PHY pins and PoE power path, the TLS trust anchor, the light-sensor driver, real captured radar frames, the LD2461, and everything that needs the physical board. See
+The PoE power path, the TLS trust anchor (a CA certificate at `certs/ca.pem` is embedded when it exists), real captured radar frames, the radar modules' own configuration, the LD2461, over-the-air updates, and everything that needs the physical board. See
 [ARMOR-HARDWARE](../../ARMOR-HARDWARE) for the enclosure and its validation boundary.

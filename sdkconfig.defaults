@@ -1,6 +1,17 @@
 # ARMOR-RADAR defaults. Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
 #
 # The three radars need all three UARTs, and UART0 is the default console. Move the
-# console to the native USB Serial/JTAG peripheral so UART0 is free for a radar.
-# Verify on the real board that its USB connector is wired to the ESP32-S3 native USB.
+# console to the native USB Serial/JTAG peripheral so UART0 is free for a radar. On the
+# Waveshare ESP32-S3-ETH the USB-C connector is the native USB port, so the serial log
+# comes out of the same cable used to flash it.
+CONFIG_IDF_TARGET="esp32s3"
 CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+# Show the node's own log lines at the default level; the drivers stay quiet unless they warn.
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+# A wired node that stops answering must recover by itself: the task watchdog resets a stuck task.
+CONFIG_ESP_TASK_WDT_EN=y
+# The W5500 Ethernet controller of the board (SPI), and nothing else of the Ethernet drivers.
+CONFIG_ETH_USE_SPI_ETHERNET=y
+CONFIG_ETH_SPI_ETHERNET_W5500=y
+CONFIG_ETH_SPI_ETHERNET_DM9051=n
+CONFIG_ETH_SPI_ETHERNET_KSZ8851SNL=n

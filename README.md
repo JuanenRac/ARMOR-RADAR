@@ -6,7 +6,7 @@
 
 <p align="center">🇺🇸 <b>English</b> | <a href="README_spa.md">🇪🇸 Español</a></p>
 
-### Field-node firmware and its host-tested core
+### Field-node firmware (Waveshare ESP32-S3-ETH, three LD2450 radars, Ethernet) and its host-tested core
 
 <p align="center">
   <img src="https://img.shields.io/badge/License-GPL%203.0-blue.svg" alt="GPL 3.0">
@@ -17,17 +17,18 @@
 
 ---
 
-**Honesty check - what runs today:** **Maturity: scaffolding.** The hardware-independent core (124 checks), the **HLK-LD2450 decoder** (written from the Hi-Link manual; its worked example decodes to the manual's values) and the firmware's JSON (validated by ARMOR-COMMON) are real. `main/app_main.cpp` is **not compiled here** (it needs ESP-IDF 5.x and a board), **no frame has been captured from a real module**, the LD2461 is not decoded (no document), and telemetry is withheld until a light-sensor driver exists.
+**Honesty check - what runs today:** **Maturity: scaffolding.** The hardware-independent core (167 checks), the **HLK-LD2450 decoder** (written from the Hi-Link manual; its worked example decodes to the manual's values), the VEML7700 conversion and the firmware's JSON (validated by ARMOR-COMMON) are tested on a computer, and the **firmware image builds** in the ESP-IDF 5.4.2 container. **It has never run on a board**: no frame has been captured from a real module, the Ethernet and light-sensor drivers are untried, the LD2461 is not decoded (no document) and the radar modules are not configured by the node.
 
 ---
 
 ## 1. 🛠️ OVERVIEW
 
+* **Two nodes of 270 degrees:** each Waveshare ESP32-S3-ETH reads up to three LD2450 radars on its three UARTs, mounted 75 degrees apart, over wired Ethernet (W5500) with DHCP or a fixed address. Studio's *Add a 270° node* creates the three radars already wired to the node.
 * **Resynchronising framer and LD2450 decoder:** finds frames in a noisy UART stream by header, length and tail, drops one byte on a mismatch and carries on; each 30-byte frame gives up to three targets (x, y, speed, distance gate) that become contract tracks. A radar that stops reporting leaves no ghost targets.
-* **Contract-exact messages:** the telemetry and health JSON follow the published schemas (15 tracks, 5 per sensor, lux range, node-id pattern) and refuse to write anything invalid.
-* **Climate and light logic:** dew point (Magnus), an anti-fog PTC heater controller with hysteresis that switches off on any bad reading, and a local day/night decision.
-* **Static-reflector map:** learned only during an operator's calibration and applied only to echoes that are both at a learned position and stationary, so a person standing still is never hidden.
-* **Safe start:** the node refuses to start with an invalid or placeholder identity or duplicate radar pins, uses wall-clock time (SNTP) for timestamps, and announces `offline` through an MQTT last will.
+* **Radar health on the console:** per radar, bytes, good and bad frames every ten seconds, and why a radar is not reporting. Telemetry is withheld while no radar reports, never an empty 'all clear'.
+* **VEML7700 ambient light** with automatic range and the datasheet's correction. Without the sensor the node withholds telemetry, or sends an explicit bench value that it logs at every start.
+* **Contract-exact messages:** the telemetry and health JSON follow the published schemas (15 tracks, 5 per sensor, lux range, node-id pattern) and refuse to write anything invalid; timestamps are wall-clock (SNTP) and an MQTT last will announces `offline`.
+* **Bench tools:** one image per node from its own settings file, provisioning of the broker identity without showing the password, flashing over USB, and a converter from a log of raw frames to a test fixture ([bench bring-up](docs/BENCH_BRINGUP.md)).
 
 ---
 
@@ -35,12 +36,17 @@
 
 ```bash
 cmake -S tests -B build/host && cmake --build build/host
-build/host/test_core                                  # 124 checks, -Werror
+build/host/test_core                                  # 167 checks, -Werror
 build/host/emit_samples | python tests/check_contract.py
-idf.py build                                          # firmware, needs ESP-IDF 5.x
+tools/provision_node.sh perimetro-1 --host <cm5> --user <user> --key <key>
+tools/build_node.sh perimetro-1                       # one image in dist/, in the ESP-IDF container
 ```
 
-The host tests need any C++17 compiler (Linux, WSL, MSYS2). See the [hardware boundary](docs/HARDWARE_BOUNDARY.md).
+```bat
+tools\flash.bat perimetro-1 COM5 monitor
+```
+
+The host tests need any C++17 compiler (Linux, WSL, MSYS2). See the [bench bring-up](docs/BENCH_BRINGUP.md) and the [hardware boundary](docs/HARDWARE_BOUNDARY.md).
 
 ---
 
@@ -49,11 +55,16 @@ The host tests need any C++17 compiler (Linux, WSL, MSYS2). See the [hardware bo
 ```text
 ARMOR-RADAR/
 ├── main/
-│   ├── app_main.cpp        firmware (needs ESP-IDF)
-│   └── core/               framer, ld2450, telemetry_json, climate, static_map, node_id
-├── tests/                  test_core.cpp, emit_samples.cpp, check_contract.py
-├── Kconfig.projbuild, sdkconfig.defaults
-└── docs/HARDWARE_BOUNDARY.md
+│   ├── app_main.cpp        tasks: radars, network, MQTT, statistics
+│   ├── board_ethernet.cpp  W5500 over SPI
+│   ├── light_sensor.cpp    VEML7700 over I2C
+│   ├── Kconfig.projbuild   every pin and setting
+│   └── core/               framer, ld2450, veml7700, radar_health, telemetry_json, climate, static_map, node_id
+├── tests/                  test_core.cpp, emit_samples.cpp, check_contract.py, test_tools.py
+├── tools/                  build_node.sh, provision_node.sh, flash.bat, frames_to_fixture.py
+├── secrets/                node.conf.example (the real files are git-ignored)
+├── sdkconfig.defaults
+└── docs/                   BENCH_BRINGUP.md, HARDWARE_BOUNDARY.md
 ```
 
 ---

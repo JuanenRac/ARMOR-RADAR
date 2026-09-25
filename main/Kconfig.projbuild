@@ -1,0 +1,157 @@
+menu "A.R.M.O.R. field node"
+
+config ARMOR_NODE_ID
+    string "Unique node identifier"
+    default "unconfigured-node"
+    help
+        Lowercase letters, digits, '-' and '_' (1 to 64, not starting with '-' or '_').
+        The node refuses to start while this is still "unconfigured-node".
+        Each node needs its own identity on the broker (scripts/mqtt_identity.sh add node ID).
+
+menu "Radars (HLK-LD2450)"
+
+config ARMOR_RADAR_COUNT
+    int "How many radars are connected (1 to 3)"
+    range 1 3
+    default 3
+    help
+        Radar 1 uses UART0, radar 2 UART1 and radar 3 UART2. The console is moved to the native USB
+        Serial/JTAG (sdkconfig.defaults), so all three UARTs are free for the radars.
+        In Studio a radar is the "channel" 1, 2 or 3 of this node.
+
+config ARMOR_RADAR_1_RX
+    int "Radar 1: GPIO that receives its TX line"
+    default 16
+config ARMOR_RADAR_2_RX
+    int "Radar 2: GPIO that receives its TX line"
+    default 17
+config ARMOR_RADAR_3_RX
+    int "Radar 3: GPIO that receives its TX line"
+    default 18
+
+config ARMOR_RADAR_HEX_DUMP
+    bool "Log the first frames of every radar as hexadecimal"
+    default n
+    help
+        For the first day on the bench: the log lines "FRAME rN <hex>" are turned into a test fixture
+        with tools/frames_to_fixture.py, so the decoder is checked against what a real module sends.
+
+config ARMOR_RADAR_HEX_DUMP_FRAMES
+    int "Frames to log per radar"
+    depends on ARMOR_RADAR_HEX_DUMP
+    range 1 200
+    default 30
+
+config ARMOR_TELEMETRY_PERIOD_MS
+    int "Telemetry period in milliseconds (at most five messages a second)"
+    range 200 5000
+    default 200
+
+endmenu
+
+menu "Ethernet (W5500 over SPI)"
+
+config ARMOR_ETH_SPI_HOST
+    int "SPI host of the W5500 (1 = SPI2, 2 = SPI3)"
+    range 1 2
+    default 1
+config ARMOR_ETH_MOSI
+    int "W5500 MOSI GPIO"
+    default 11
+config ARMOR_ETH_MISO
+    int "W5500 MISO GPIO"
+    default 12
+config ARMOR_ETH_SCLK
+    int "W5500 SCLK GPIO"
+    default 13
+config ARMOR_ETH_CS
+    int "W5500 chip select GPIO"
+    default 14
+config ARMOR_ETH_INT
+    int "W5500 interrupt GPIO"
+    default 10
+config ARMOR_ETH_RST
+    int "W5500 reset GPIO (-1 if not wired)"
+    default 9
+config ARMOR_ETH_SPI_MHZ
+    int "SPI clock in MHz"
+    range 1 40
+    default 20
+    help
+        The W5500 accepts much more; 20 MHz leaves margin on jumper wires.
+
+config ARMOR_ETH_STATIC_IP
+    bool "Use a fixed IPv4 address instead of DHCP"
+    default n
+config ARMOR_ETH_IP
+    string "IPv4 address"
+    depends on ARMOR_ETH_STATIC_IP
+    default "192.168.0.181"
+config ARMOR_ETH_NETMASK
+    string "Netmask"
+    depends on ARMOR_ETH_STATIC_IP
+    default "255.255.255.0"
+config ARMOR_ETH_GATEWAY
+    string "Gateway"
+    depends on ARMOR_ETH_STATIC_IP
+    default "192.168.0.1"
+config ARMOR_ETH_DNS
+    string "DNS server"
+    depends on ARMOR_ETH_STATIC_IP
+    default "192.168.0.1"
+
+endmenu
+
+menu "Broker and time"
+
+config ARMOR_MQTT_URI
+    string "MQTT broker URI"
+    default "mqtt://192.168.0.180:18883"
+    help
+        The bench broker of the CM5 speaks plain MQTT on 18883 (own identities, no anonymous access).
+        Use mqtts:// with a CA certificate in certs/ca.pem for a network you do not control.
+config ARMOR_MQTT_USERNAME
+    string "MQTT username (one identity per node)"
+    default ""
+config ARMOR_MQTT_PASSWORD
+    string "MQTT password"
+    default ""
+config ARMOR_NTP_SERVER
+    string "NTP server (message timestamps are wall-clock time)"
+    default "pool.ntp.org"
+    help
+        The node publishes nothing until its clock is set. On a network without Internet access, point this at
+        a machine on the LAN that serves NTP (the CM5, a router).
+config ARMOR_HEARTBEAT_S
+    int "Health heartbeat interval in seconds"
+    range 2 300
+    default 10
+
+endmenu
+
+menu "Ambient light (VEML7700)"
+
+config ARMOR_LIGHT_VEML7700
+    bool "A VEML7700 is connected on I2C"
+    default y
+config ARMOR_I2C_SDA
+    int "I2C SDA GPIO"
+    depends on ARMOR_LIGHT_VEML7700
+    default 1
+config ARMOR_I2C_SCL
+    int "I2C SCL GPIO"
+    depends on ARMOR_LIGHT_VEML7700
+    default 2
+config ARMOR_LUX_FALLBACK
+    int "Lux value to send while there is no sensor reading (-1 withholds telemetry)"
+    range -1 200000
+    default -1
+    help
+        The message contract requires an ambient-light value. Without a sensor the node withholds telemetry
+        rather than invent one. For a bench test WITHOUT the light sensor set a value here (for example 300):
+        it is logged at every start and the server's day/night decisions will use it, so it is never a
+        setting for a real installation.
+
+endmenu
+
+endmenu
