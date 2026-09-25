@@ -37,6 +37,8 @@ std::atomic<bool> g_enabled{false};
 std::atomic<std::uint32_t> g_published{0};
 std::atomic<int> g_withheld{0};   // 0 nothing, 1 light, 2 radars
 
+void publish_info();
+
 void on_mqtt(void*, esp_event_base_t, int32_t event_id, void* data) {
   auto* event = static_cast<esp_mqtt_event_handle_t>(data);
   switch (event_id) {
