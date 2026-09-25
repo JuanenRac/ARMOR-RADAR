@@ -19,6 +19,7 @@
 #include "json.hpp"
 #include "net_text.hpp"
 #include "node_id.hpp"
+#include "sensor_model.hpp"
 
 namespace armor::config {
 
@@ -70,6 +71,9 @@ struct Mqtt {
 
 struct RadarLine {
   bool enabled = false;
+  std::string model = "ld2450";   // which sensor is on this serial port (core/sensor_model.hpp)
+  int baud = 0;                    // 0: the model's own speed
+  std::string name;                // a presence sensor is a device of the server with this name (armor/device/<node>/<name>/state); trackers do not use it
   int rx = -1;  // the GPIO that receives the radar's TX line
   int tx = -1;  // the GPIO that sends to the radar's RX line; -1: not wired, the radar cannot be configured from the panel
 };
@@ -286,6 +290,9 @@ inline void read_settings(const json::Value& document, Settings& s, Problems& pr
       const std::string base = "radars." + std::to_string(i) + ".";
       if (!item.is_object()) { bad(problems, base + "enabled", "invalid"); continue; }
       read_bool(item, "enabled", s.radars[i].enabled, base + "enabled", problems);
+      read_text(item, "model", s.radars[i].model, 12, base + "model", problems);
+      read_int(item, "baud", s.radars[i].baud, 0, 921600, base + "baud", problems);
+      read_text(item, "name", s.radars[i].name, 24, base + "name", problems);
       read_int(item, "rx", s.radars[i].rx, -1, board::kLastGpio, base + "rx", problems);
       read_int(item, "tx", s.radars[i].tx, -1, board::kLastGpio, base + "tx", problems);
     }
@@ -416,6 +423,7 @@ inline Problems validate(const Settings& s) {
   }
 
   // pins: the radars, the light sensor and the mapped pins may not share a GPIO, and none may be a reserved one
+  std::vector<std::string> names;   // the names of the devices this node offers (presence sensors and mapped pins share one namespace)
   detail::PinClaims claims;
   const auto claim = [&](int gpio, const std::string& who, const std::string& path, bool allow_sd) {
     if (!board::assignable(gpio, allow_sd)) { bad(problems, path, board::pin_info(gpio).use == board::PinUse::kSdCard ? "sd_card" : "reserved"); return; }
@@ -426,6 +434,17 @@ inline Problems validate(const Settings& s) {
     const RadarLine& radar = s.radars[i];
     if (!radar.enabled) continue;
     const std::string base = "radars." + std::to_string(i) + ".", who = "radar" + std::to_string(i + 1);
+    sensors::Model model;
+    if (!sensors::from_text(radar.model, model)) bad(problems, base + "model", "invalid");
+    else {
+      static const int kSpeeds[] = {9600, 19200, 38400, 57600, 115200, 230400, 256000, 460800};
+      if (radar.baud != 0 && std::find(std::begin(kSpeeds), std::end(kSpeeds), radar.baud) == std::end(kSpeeds)) bad(problems, base + "baud", "range");
+      if (!sensors::info(model).tracker) {   // a presence sensor is a device: it needs a name for its topic
+        if (!valid_slug(radar.name)) bad(problems, base + "name", radar.name.empty() ? "required" : "invalid");
+        else if (std::find(names.begin(), names.end(), radar.name) != names.end()) bad(problems, base + "name", "conflict");
+        else names.push_back(radar.name);
+      }
+    }
     if (radar.rx < 0) bad(problems, base + "rx", "required"); else claim(radar.rx, who, base + "rx", true);
     if (radar.tx >= 0) claim(radar.tx, who, base + "tx", true);
   }
@@ -433,7 +452,6 @@ inline Problems validate(const Settings& s) {
     claim(s.sensors.sda, "i2c", "sensors.sda", true);
     claim(s.sensors.scl, "i2c", "sensors.scl", true);
   }
-  std::vector<std::string> names;
   for (std::size_t i = 0; i < s.pins.size(); ++i) {
     const MappedPin& pin = s.pins[i];
     const std::string base = "pins." + std::to_string(i) + ".";
@@ -476,7 +494,7 @@ inline std::string to_json(const Settings& s, bool secrets) {
   if (secrets) w.field("password", s.mqtt.password); else w.field("password_set", !s.mqtt.password.empty());
   w.field("heartbeat_s", s.mqtt.heartbeat_s).field("telemetry_ms", s.mqtt.telemetry_ms).field("ntp", s.mqtt.ntp).end_object();
   w.key("radars").begin_array();
-  for (const RadarLine& radar : s.radars) w.begin_object().field("enabled", radar.enabled).field("rx", radar.rx).field("tx", radar.tx).end_object();
+  for (const RadarLine& radar : s.radars) w.begin_object().field("enabled", radar.enabled).field("model", radar.model).field("baud", radar.baud).field("name", radar.name).field("rx", radar.rx).field("tx", radar.tx).end_object();
   w.end_array();
   w.key("sensors").begin_object().field("veml7700", s.sensors.veml7700).field("sda", s.sensors.sda).field("scl", s.sensors.scl).field("lux_fallback", s.sensors.lux_fallback).end_object();
   w.key("pins").begin_array();

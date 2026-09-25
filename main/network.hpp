@@ -2,6 +2,7 @@
 // Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
 #pragma once
 #include <string>
+#include <vector>
 
 #include "core/network_plan.hpp"
 #include "core/node_config.hpp"
@@ -31,5 +32,17 @@ bool start(const config::Settings& settings, const netplan::Plan& plan);
 
 bool has_ip();
 Status status();
+
+// One Wi-Fi network heard by a search.
+struct ScanEntry {
+  std::string ssid;
+  int rssi = 0;
+  int channel = 0;
+  std::string security;   // open, wep, wpa, wpa2, wpa3, wpa2wpa3, enterprise
+};
+// Searches for Wi-Fi networks (up to 25, strongest first, one line per name). It works whatever the node's layout: if the radio is running only
+// as an access point it is briefly used as a station too (the clients of the access point may notice), and if Wi-Fi is not running at all it is
+// started for the search and stopped again. False, with a code in `error`, when the radio is busy or the search fails.
+bool scan(std::vector<ScanEntry>& out, std::string& error);
 
 }  // namespace armor::network

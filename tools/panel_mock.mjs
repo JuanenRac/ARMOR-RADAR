@@ -32,13 +32,14 @@ const config = {
   ap: { enabled: true, ssid: "ARMOR", security: "wpa2", password_set: true, channel: 0, hidden: false, max_clients: 8, tx_power_dbm: 15, bandwidth_mhz: 20, country: "ES", bridge: true },
   sta: { enabled: false, ssid: "", password_set: false },
   mqtt: { enabled: true, uri: "mqtt://192.168.0.180:18883", username: "field-node-a1b2c3", password_set: true, heartbeat_s: 10, telemetry_ms: 200, ntp: "pool.ntp.org" },
-  radars: [{ enabled: true, rx: 16, tx: 15 }, { enabled: true, rx: 17, tx: 21 }, { enabled: false, rx: 18, tx: 38 }],
+  radars: [{ enabled: true, model: "ld2450", baud: 0, name: "", rx: 16, tx: 15 }, { enabled: true, model: "ld2461", baud: 0, name: "", rx: 17, tx: 21 }, { enabled: true, model: "ld2410", baud: 0, name: "garage_presence", rx: 18, tx: 38 }],
   sensors: { veml7700: true, sda: 1, scl: 2, lux_fallback: -1 },
   pins: [
     { gpio: 39, name: "garden_light", mode: "output", invert: true, pull: "none", initial_on: false, safe: "off", link_timeout_s: 60, pulse_ms: 800, debounce_ms: 30, period_s: 10, freq_hz: 1000, report: "on", scale: 1, offset: 0 },
     { gpio: 40, name: "gate_contact", mode: "input", invert: false, pull: "up", initial_on: false, safe: "keep", link_timeout_s: 0, pulse_ms: 0, debounce_ms: 30, period_s: 10, freq_hz: 1000, report: "open", scale: 1, offset: 0 },
     { gpio: 2, name: "battery", mode: "adc", invert: false, pull: "none", initial_on: false, safe: "keep", link_timeout_s: 0, pulse_ms: 0, debounce_ms: 30, period_s: 10, freq_hz: 1000, report: "battery", scale: 0.0057, offset: 0 },
   ],
+  ble: { mode: "setup" },
   ui: { language: "en" },
 };
 const live = { garden_light: { on: false, percent: 0, value: 0, has_value: false }, gate_contact: { on: true, percent: 0, value: 0, has_value: false }, battery: { on: false, percent: 0, value: 12.61, has_value: true } };
@@ -68,7 +69,12 @@ function status() {
       ap_active: config.ap.enabled, ap_setup: users.size === 0, ap_bridged: config.ap.bridge, ap_ssid: users.size === 0 ? "ARMOR-SETUP-A1B2C3" : config.ap.ssid, ap_channel: 6, ap_clients: 2, sta_connected: false, sta_ssid: "", sta_rssi: 0 },
     mqtt: { enabled: config.mqtt.enabled, connected: true, clock_set: true, published: 4120 + Math.floor((Date.now() - started) / 200), withheld: "" },
     lux: 312.4,
-    radars: config.radars.map((r, i) => ({ radar: i + 1, enabled: r.enabled, rx: r.rx, tx: r.tx, state: !r.enabled ? "disabled" : i === 1 ? "no_data" : "reporting", bytes: i === 1 ? 0 : 812345, frames: i === 1 ? 0 : 27020, bad_frames: 3, fps: i === 1 ? 0 : 9.9, firmware: i === 0 ? "1.02.22062416" : "", tracking_mode: i === 0 ? 2 : 0 })),
+    radars: config.radars.map((r, i) => ({
+      radar: i + 1, enabled: r.enabled, model: r.model, tracker: r.model === "ld2450" || r.model === "ld2461", name: r.name, rx: r.rx, tx: r.tx,
+      state: !r.enabled ? "disabled" : i === 1 ? "no_data" : "reporting", state_text: "", bytes: i === 1 ? 0 : 812345, frames: i === 1 ? 0 : 27020, bad_frames: 3, fps: i === 1 ? 0 : 9.9,
+      firmware: i === 0 ? "1.02.22062416" : "", tracking_mode: i === 0 ? 2 : 0, present: i === 2 ? 1 : -1, distance_cm: i === 2 ? 240 : -1,
+      ...(i === 2 ? { detail: { state: 1, moving_cm: 240, moving_energy: 62, static_cm: 0, static_energy: 0, calibrating: false, detection_cm: 240 } } : {}),
+    })),
   };
 }
 
@@ -118,6 +124,7 @@ const server = createServer(async (request, response) => {
   const needAdmin = () => { if (!admin) { json(response, 403, { error: "forbidden" }); return false; } return true; };
 
   if (method === "GET" && route === "status") return json(response, 200, status());
+  if (method === "GET" && route === "wifi/scan") { if (!needAdmin()) return; return json(response, 200, { networks: [{ ssid: "HomeRouter", rssi: -48, channel: 6, security: "wpa2" }, { ssid: "Neighbour", rssi: -71, channel: 11, security: "wpa2wpa3" }, { ssid: "CafeOpen", rssi: -80, channel: 1, security: "open" }] }); }
   if (method === "GET" && route === "config") return json(response, 200, { config, channel_auto: 6, firmware: "0.2.3" });
   if (method === "PUT" && route === "config") {
     if (!needAdmin()) return;

@@ -27,6 +27,7 @@ extern "C" {
 #include "freertos/task.h"
 #include "sdkconfig.h"
 }
+#include "ble_provision.hpp"
 #include "core/network_plan.hpp"
 #include "gpio_manager.hpp"
 #include "light_sensor.hpp"
@@ -103,7 +104,7 @@ extern "C" void app_main() {
   for (const armor::config::Problem& problem : problems) ESP_LOGE(kTag, "settings problem: %s (%s)", problem.path.c_str(), problem.code.c_str());
 
   // The radars run first: on the bench their statistics are the first thing to look at, with or without a network.
-  armor::radar::start(settings);
+  armor::radar::start(settings, [](const std::string& topic, const std::string& payload) { armor::mqtt_link::publish(topic, payload); });
   if (!armor::light_sensor_start(settings.sensors)) ESP_LOGE(kTag, "the light sensor could not be started: telemetry stays withheld unless a light fallback is set");
   armor::pins::start(
       settings, [](const std::string& topic, const std::string& payload) { armor::mqtt_link::publish(topic, payload); },
@@ -114,6 +115,7 @@ extern "C" void app_main() {
   if (!network_ok) ESP_LOGE(kTag, "the network could not be started: the node stays local");
   const bool panel_ok = network_ok && armor::web::start(settings);
   armor::mqtt_link::start(settings);
+  armor::ble_provision::start(settings, setup);   // only when the settings say so: Bluetooth stays unused otherwise
 
   if (setup) xTaskCreate(setup_reminder_task, "setup-hint", 3072, nullptr, 2, nullptr);
   bool button_is_a_pin = false;

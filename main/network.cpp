@@ -6,6 +6,7 @@
 #include "network.hpp"
 
 #include <cstdio>
+#include <algorithm>
 #include <cstring>
 #include <mutex>
 extern "C" {
@@ -32,6 +33,8 @@ config::Settings g_settings;
 esp_netif_t* g_ip_netif = nullptr;   // the interface that holds the node's address
 esp_eth_handle_t g_eth = nullptr;
 esp_timer_handle_t g_reconnect_timer = nullptr;
+bool g_wifi_running = false;   // the driver was started by start() (an access point, a station, or both)
+std::mutex g_scan_lock;
 
 std::string text_of(const esp_ip4_addr_t& address) {
   char text[16];
@@ -292,6 +295,7 @@ bool start(const config::Settings& s, const netplan::Plan& plan) {
     }
     ESP_ERROR_CHECK(esp_wifi_start());
     wifi_tune(plan);
+    g_wifi_running = true;
     return true;
   }
 
@@ -312,8 +316,71 @@ bool start(const config::Settings& s, const netplan::Plan& plan) {
     if (!wifi_setup(s, plan, station)) return false;
   }
   if (g_eth != nullptr) ESP_ERROR_CHECK(esp_eth_start(g_eth));
-  if (plan.ap.enabled || station) { ESP_ERROR_CHECK(esp_wifi_start()); wifi_tune(plan); }
+  if (plan.ap.enabled || station) { ESP_ERROR_CHECK(esp_wifi_start()); wifi_tune(plan); g_wifi_running = true; }
   return true;
+}
+
+namespace {
+const char* security_text(wifi_auth_mode_t mode) {
+  switch (mode) {
+    case WIFI_AUTH_OPEN: return "open";
+    case WIFI_AUTH_WEP: return "wep";
+    case WIFI_AUTH_WPA_PSK: return "wpa";
+    case WIFI_AUTH_WPA2_PSK: return "wpa2";
+    case WIFI_AUTH_WPA_WPA2_PSK: return "wpa2";
+    case WIFI_AUTH_WPA3_PSK: return "wpa3";
+    case WIFI_AUTH_WPA2_WPA3_PSK: return "wpa2wpa3";
+    case WIFI_AUTH_WPA2_ENTERPRISE: case WIFI_AUTH_WPA3_ENTERPRISE: case WIFI_AUTH_WPA2_WPA3_ENTERPRISE: return "enterprise";
+    default: return "wpa2";
+  }
+}
+}  // namespace
+
+bool scan(std::vector<ScanEntry>& out, std::string& error) {
+  out.clear();
+  std::unique_lock<std::mutex> guard(g_scan_lock, std::try_to_lock);
+  if (!guard.owns_lock()) { error = "wifi_busy"; return false; }
+  bool started_here = false;   // the driver was not running: it is started for the search and stopped after
+  wifi_mode_t previous = WIFI_MODE_NULL;
+  if (!g_wifi_running) {
+    wifi_init_config_t init = WIFI_INIT_CONFIG_DEFAULT();
+    if (esp_wifi_init(&init) != ESP_OK) { error = "wifi_unavailable"; return false; }
+    esp_wifi_set_storage(WIFI_STORAGE_RAM);
+    esp_wifi_set_mode(WIFI_MODE_STA);
+    if (esp_wifi_start() != ESP_OK) { esp_wifi_deinit(); error = "wifi_unavailable"; return false; }
+    started_here = true;
+  } else {
+    esp_wifi_get_mode(&previous);
+    if (previous == WIFI_MODE_AP) esp_wifi_set_mode(WIFI_MODE_APSTA);   // an access point alone cannot search
+  }
+  wifi_scan_config_t config{};
+  config.show_hidden = false;
+  config.scan_type = WIFI_SCAN_TYPE_ACTIVE;
+  config.scan_time.active.min = 80;
+  config.scan_time.active.max = 200;
+  const esp_err_t result = esp_wifi_scan_start(&config, true);   // blocks until the search is over
+  bool ok = result == ESP_OK;
+  if (ok) {
+    std::uint16_t count = 0;
+    esp_wifi_scan_get_ap_num(&count);
+    if (count > 40) count = 40;
+    std::vector<wifi_ap_record_t> records(count);
+    if (count > 0) esp_wifi_scan_get_ap_records(&count, records.data());
+    records.resize(count);
+    std::sort(records.begin(), records.end(), [](const wifi_ap_record_t& a, const wifi_ap_record_t& b) { return a.rssi > b.rssi; });
+    for (const wifi_ap_record_t& record : records) {
+      const std::string name(reinterpret_cast<const char*>(record.ssid));
+      if (name.empty() || out.size() >= 25) continue;
+      if (std::any_of(out.begin(), out.end(), [&](const ScanEntry& e) { return e.ssid == name; })) continue;   // the strongest of a name is kept
+      out.push_back({name, record.rssi, record.primary, security_text(record.authmode)});
+    }
+  } else {
+    esp_wifi_clear_ap_list();
+    error = result == ESP_ERR_WIFI_STATE ? "wifi_busy" : "scan_failed";
+  }
+  if (started_here) { esp_wifi_stop(); esp_wifi_deinit(); }
+  else if (previous == WIFI_MODE_AP) esp_wifi_set_mode(WIFI_MODE_AP);
+  return ok;
 }
 
 bool has_ip() {

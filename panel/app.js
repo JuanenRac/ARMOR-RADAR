@@ -33,7 +33,7 @@ function el(tag, attrs, ...kids) {
 
 const S = {
   session: null, cfg: null, saved: "", channelAuto: 1, firmware: "", status: null, catalog: [], live: [], radars: [], users: [],
-  page: "overview", problems: {}, message: null, restartNeeded: false, radarInfo: {}, zones: {}, log: { next: 0, text: "" }, busy: false, rebooting: false,
+  page: "overview", problems: {}, message: null, restartNeeded: false, radarInfo: {}, zones: {}, scan: { busy: false, list: null, error: "" }, log: { next: 0, text: "" }, busy: false, rebooting: false,
 };
 const isAdmin = () => S.session && S.session.role === "admin";
 
@@ -96,7 +96,7 @@ function field(labelKey, path, options = {}) {
     return el("label", { class: "check" }, input, t(labelKey), problem ? el("span", { class: "err" }, problemText(problem)) : null);
   }
   if (options.type === "select") {
-    input = el("select", { disabled, onchange: e => { const v = e.target.value; setValue(path, options.number ? Number(v) : v); if (options.rerender) render(); } },
+    input = el("select", { disabled, onchange: e => { const v = e.target.value; setValue(path, options.number ? Number(v) : v); if (options.after) options.after(v); if (options.rerender) render(); } },
       options.options.map(([value, text]) => el("option", { value: String(value), selected: String(current) === String(value) }, text)));
   } else if (options.type === "number") {
     input = el("input", { type: "number", min: options.min, max: options.max, step: options.step || 1, value: current === undefined ? "" : current, disabled,
@@ -205,8 +205,8 @@ function overviewPage() {
       n.ethernet_ok ? null : note(t("ethernetMissing"), "bad")),
     card(t("ovBroker"), kv([[t("navBroker"), !m.enabled ? t("notConfigured") : m.connected ? t("connected") : t("notConnected")], [t("clock"), m.clock_set ? t("clockSet") : t("clockNotSet")], [t("messages"), m.published]]),
       m.withheld === "light" ? note(t("withheldLight")) : m.withheld === "radars" ? note(t("withheldRadars")) : null),
-    card(t("radarsTitle"), el("div", { class: "row" }, s.radars.map(r => el("div", {}, el("h3", {}, t("radarN", r.radar)), statePill(r.enabled ? r.state : "disabled"),
-      r.enabled ? el("p", { class: "muted" }, t("framesRate", r.fps), " · ", t("counters", r.bytes, r.frames, r.bad_frames)) : null)))));
+    card(t("radarsTitle"), el("div", { class: "row" }, s.radars.map(r => el("div", {}, el("h3", {}, t("sensorN", r.radar), r.enabled && r.model ? " · " + modelOf(r.model).label : ""), statePill(r.enabled ? r.state : "disabled"),
+      r.enabled ? el("p", { class: "muted" }, presenceText(r) ? presenceText(r) + " · " : "", t("framesRate", r.fps), " · ", t("counters", r.bytes, r.frames, r.bad_frames)) : null)))));
 }
 
 function networkPage() {
@@ -218,7 +218,26 @@ function networkPage() {
       wired && !cfg.ip.dhcp ? el("div", { class: "row" }, field("address", "ip.address"), field("netmask", "ip.netmask"), field("gateway", "ip.gateway"), field("dns1", "ip.dns1"), field("dns2", "ip.dns2")) : null,
       field("hostname", "ip.hostname", { hint: t("hostnameHint") }),
       field("nodeName", "node.name"), field("nodeId", "node.id"),
-      note(t("netRestartNote"), "info")));
+      note(t("netRestartNote"), "info")),
+    card(t("bleTitle"), field("bleMode", "ble.mode", { type: "select", options: [["setup", t("bleSetup")], ["always", t("bleAlways")], ["off", t("bleOff")]] }), note(t("bleNote"), "info")));
+}
+
+async function scanNetworks() {
+  S.scan = { busy: true, list: null, error: "" }; render();
+  const r = await api("GET", "wifi/scan");
+  S.scan = r.ok ? { busy: false, list: r.data.networks || [], error: "" } : { busy: false, list: null, error: errorText(r.data.error) };
+  render();
+}
+
+function scanResults() {
+  const scan = S.scan;
+  if (scan.busy) return el("p", { class: "muted" }, t("scanning"));
+  if (scan.error) return el("p", { class: "err" }, scan.error);
+  if (!scan.list) return null;
+  if (!scan.list.length) return el("p", { class: "muted" }, t("noNetworks"));
+  return el("div", { class: "scroll" }, el("table", {}, el("thead", {}, el("tr", {}, el("th", {}, t("ssid")), el("th", {}, t("signal")), el("th", {}, t("wifiChannel")), el("th", {}, t("security")), el("th", {}))),
+    el("tbody", {}, scan.list.map(n => el("tr", {}, el("td", {}, n.ssid), el("td", { class: "mono" }, n.rssi + " dBm"), el("td", {}, n.channel), el("td", {}, n.security),
+      el("td", {}, el("button", { class: "b", disabled: !isAdmin(), onclick: () => { setValue("sta.enabled", true); setValue("sta.ssid", n.ssid); render(); } }, t("useNetwork"))))))));
 }
 
 function wifiPage() {
@@ -240,7 +259,8 @@ function wifiPage() {
         note(t("meshNote"), "info")] : null),
     card(t("wifiSta"), field("staEnable", "sta.enabled", { type: "checkbox", rerender: true }),
       cfg.sta.enabled ? [el("div", { class: "row" }, field("ssid", "sta.ssid", { max: 32 }), field("wifiPassword", "sta.password", { type: "password" }))] : null,
-      note(t("staNote"), "info")));
+      el("div", { class: "actions" }, el("button", { class: "b", disabled: !isAdmin() || S.scan.busy, onclick: scanNetworks }, t("scanNetworks"))), scanResults(),
+      el("p", { class: "hint" }, t("scanNote")), note(t("staNote"), "info")));
 }
 
 function brokerPage() {
@@ -342,35 +362,81 @@ async function radarCommand(index, op, extra) {
   await refreshLive(); render();
 }
 
+// What each model can be told (the node answers "unsupported" to the rest) and how its serial port starts.
+const SENSOR_MODELS = [
+  { id: "ld2450", label: "HLK-LD2450", tracker: true, baud: 256000, cmds: ["read_info", "single", "multi", "bluetooth", "restart", "factory", "zones"] },
+  { id: "ld2461", label: "HLK-LD2461", tracker: true, baud: 9600, cmds: ["read_info", "factory", "zones"] },
+  { id: "ld2410", label: "HLK-LD2410B / LD2410C", tracker: false, baud: 256000, cmds: ["read_info", "bluetooth", "restart", "factory"] },
+  { id: "ld2412", label: "HLK-LD2412", tracker: false, baud: 115200, cmds: ["read_info", "bluetooth", "restart", "factory"] },
+  { id: "ld2410s", label: "HLK-LD2410S", tracker: false, baud: 115200, cmds: [] },
+  { id: "mr24hpc1", label: "Seeed MR24HPC1", tracker: false, baud: 9600, cmds: [] },
+];
+const SENSOR_BAUDS = [9600, 19200, 38400, 57600, 115200, 230400, 256000, 460800];
+const modelOf = id => SENSOR_MODELS.find(m => m.id === id) || SENSOR_MODELS[0];
+
+function presenceText(r) {
+  if (r.tracker !== false) return "";
+  if (r.present === undefined || r.present < 0) return t("presenceUnknown");
+  return t(r.present ? "presenceYes" : "presenceNo") + (r.present && r.distance_cm >= 0 ? " " + t("distanceCm", r.distance_cm) : "");
+}
+function liveText(r) {
+  const presence = presenceText(r);
+  return (presence ? presence + " · " : "") + radarStateText(r.state) + " · " + t("framesRate", r.fps) + " · " + t("counters", r.bytes, r.frames, r.bad_frames);
+}
+// The numbers a model adds to its report: the zones of an LD2461, the energies of an LD2410, the flags of an MR24.
+function detailText(r) {
+  const d = r.detail;
+  if (!d || r.state === "disabled") return "";
+  if (Array.isArray(d.zones)) { const busy = d.zones.map((z, i) => z ? i + 1 : 0).filter(Boolean); return t("zonesOccupied", busy.length ? busy.join(", ") : t("none")); }
+  if (d.moving_cm !== undefined) return t("presenceDetail", d.moving_cm, d.moving_energy, d.static_cm, d.static_energy);
+  if (d.motion !== undefined) return t("mr24Detail", d.motion, d.body_movement, d.proximity);
+  return "";
+}
+
 function radarCard(index) {
   const cfg = S.cfg.radars[index], base = "radars." + index + ".";
   const status = (S.status && S.status.radars[index]) || { enabled: false, state: "disabled" };
   const info = S.radarInfo[index] || {};
+  const model = modelOf(cfg.model);
   const zone = S.zones[index] || (S.zones[index] = { type: 0, list: [{ x1: 0, y1: 0, x2: 0, y2: 0 }, { x1: 0, y1: 0, x2: 0, y2: 0 }, { x1: 0, y1: 0, x2: 0, y2: 0 }] });
-  const canCommand = isAdmin() && status.enabled && status.tx >= 0 && !info.busy;
+  const canCommand = isAdmin() && status.enabled && status.tx >= 0 && !info.busy && status.model === cfg.model;
   const ask = (action) => { if (confirm(t("confirmAsk"))) action(); };
+  const can = name => model.cmds.includes(name);
   const zoneRows = zone.list.map((z, i) => el("div", { class: "zone" }, ["x1", "y1", "x2", "y2"].map(k => el("input", { type: "number", value: z[k], "aria-label": k + " " + (i + 1), disabled: !isAdmin(),
     oninput: e => { z[k] = Number(e.target.value); } }))));
-  return el("section", { class: "card" }, el("h2", {}, t("radarN", index + 1)),
+  const button = (cls, name, label, run) => can(name) ? el("button", { class: "b " + cls, disabled: !canCommand, onclick: run }, t(label)) : null;
+  const formatNumber = info.mode || status.tracking_mode;
+  const modelChanged = value => { if (!modelOf(value).tracker && !cfg.name) setValue(base + "name", "presence" + (index + 1)); };
+  return el("section", { class: "card" }, el("h2", {}, t("sensorN", index + 1), cfg.enabled ? " · " + model.label : ""),
     field("radarConnected", base + "enabled", { type: "checkbox", rerender: true }),
-    cfg.enabled ? el("div", { class: "row" }, field("rxPin", base + "rx", { type: "select", number: true, options: pinOptions(cfg.rx, false) }), field("txPin", base + "tx", { type: "select", number: true, options: pinOptions(cfg.tx, true) })) : null,
-    status.enabled ? el("div", { class: "actions" }, statePill(status.state), el("span", { class: "muted", id: "radar-live-" + index }, radarStateText(status.state) + " · " + t("framesRate", status.fps) + " · " + t("counters", status.bytes, status.frames, status.bad_frames))) : null,
+    cfg.enabled ? [
+      el("div", { class: "row" },
+        field("sensorModel", base + "model", { type: "select", rerender: true, after: modelChanged, options: SENSOR_MODELS.map(m => [m.id, m.label]) }),
+        field("baudRate", base + "baud", { type: "select", number: true, options: [[0, t("baudModel", model.baud)]].concat(SENSOR_BAUDS.map(b => [b, String(b)])) })),
+      el("p", { class: "hint" }, t(model.tracker ? "kindTracker" : "kindPresence")),
+      model.tracker ? null : el("div", { class: "row" }, field("deviceName", base + "name", { max: 24, hint: t("deviceNameHint") })),
+      el("div", { class: "row" }, field("rxPin", base + "rx", { type: "select", number: true, options: pinOptions(cfg.rx, false) }), field("txPin", base + "tx", { type: "select", number: true, options: pinOptions(cfg.tx, true) }))] : null,
+    status.enabled ? el("div", { class: "actions" }, statePill(status.state), el("span", { class: "muted", id: "radar-live-" + index }, liveText(status))) : null,
     status.enabled ? [
+      el("p", { class: "muted", id: "radar-detail-" + index }, detailText(status)),
+      status.model === "ld2461" && status.state === "reporting" && status.detail && status.detail.coordinates === false ? note(t("zonesOnly")) : null,
       status.firmware || info.firmware ? el("p", { class: "muted mono" }, t("firmwareOfModule") + ": " + (info.firmware || status.firmware)) : null,
-      status.tracking_mode || info.mode ? el("p", { class: "muted" }, t("trackingMode") + ": " + t("mode" + (info.mode || status.tracking_mode))) : null,
-      el("div", { class: "actions" },
-        el("button", { class: "b primary", disabled: !canCommand, onclick: () => radarCommand(index, "read_info") }, t("readInfo")),
-        el("button", { class: "b", disabled: !canCommand, onclick: () => radarCommand(index, "single") }, t("singleTarget")),
-        el("button", { class: "b", disabled: !canCommand, onclick: () => radarCommand(index, "multi") }, t("multiTarget")),
-        el("button", { class: "b", disabled: !canCommand, onclick: () => radarCommand(index, "bluetooth", { flag: false }) }, t("bluetoothOff")),
-        el("button", { class: "b", disabled: !canCommand, onclick: () => radarCommand(index, "bluetooth", { flag: true }) }, t("bluetoothOn")),
-        el("button", { class: "b danger", disabled: !canCommand, onclick: () => ask(() => radarCommand(index, "restart")) }, t("restartModule")),
-        el("button", { class: "b danger", disabled: !canCommand, onclick: () => ask(() => radarCommand(index, "factory")) }, t("factoryModule"))),
-      el("h3", {}, t("zonesTitle")),
-      el("label", { class: "field" }, el("span", {}, t("zoneType")), el("select", { disabled: !isAdmin(), onchange: e => { zone.type = Number(e.target.value); } },
-        [[0, t("zoneOff")], [1, t("zoneInside")], [2, t("zoneOutside")]].map(([v, text]) => el("option", { value: String(v), selected: zone.type === v }, text)))),
-      el("div", { class: "zones" }, zoneRows), el("p", { class: "hint" }, t("zoneHint")),
-      el("div", { class: "actions" }, el("button", { class: "b", disabled: !canCommand, onclick: () => radarCommand(index, "set_zones", { zones: { type: zone.type, list: zone.list } }) }, t("applyZones"))),
+      formatNumber && can("read_info") ? el("p", { class: "muted" }, t(model.id === "ld2461" ? "reportFormat" : "trackingMode") + ": " + t((model.id === "ld2461" ? "fmt" : "mode") + formatNumber)) : null,
+      model.cmds.length === 0 ? el("p", { class: "hint" }, t("noCommands")) : null,
+      model.cmds.length ? el("div", { class: "actions" },
+        button("primary", "read_info", "readInfo", () => radarCommand(index, "read_info")),
+        button("", "single", "singleTarget", () => radarCommand(index, "single")),
+        button("", "multi", "multiTarget", () => radarCommand(index, "multi")),
+        button("", "bluetooth", "bluetoothOff", () => radarCommand(index, "bluetooth", { flag: false })),
+        button("", "bluetooth", "bluetoothOn", () => radarCommand(index, "bluetooth", { flag: true })),
+        button("danger", "restart", "restartModule", () => ask(() => radarCommand(index, "restart"))),
+        button("danger", "factory", "factoryModule", () => ask(() => radarCommand(index, "factory")))) : null,
+      can("zones") ? [
+        el("h3", {}, t("zonesTitle")),
+        el("label", { class: "field" }, el("span", {}, t("zoneType")), el("select", { disabled: !isAdmin(), onchange: e => { zone.type = Number(e.target.value); } },
+          [[0, t("zoneOff")], [1, t("zoneInside")], [2, t("zoneOutside")]].map(([v, text]) => el("option", { value: String(v), selected: zone.type === v }, text)))),
+        el("div", { class: "zones" }, zoneRows), el("p", { class: "hint" }, t(model.id === "ld2461" ? "zoneHintLd2461" : "zoneHint")),
+        el("div", { class: "actions" }, el("button", { class: "b", disabled: !canCommand, onclick: () => radarCommand(index, "set_zones", { zones: { type: zone.type, list: zone.list } }) }, t("applyZones")))] : null,
       info.busy ? el("p", { class: "muted" }, t("working")) : info.done ? el("p", { class: "hint" }, t("cmdDone")) : info.error ? el("p", { class: "err" }, errorText(info.error)) : null,
       info.last !== undefined ? el("p", { class: "muted mono" }, t("lastAnswer") + ": " + (info.last || "—")) : null] : null);
 }
@@ -487,7 +553,9 @@ async function poll() {
 function patchLive() {
   if (S.page === "radars" && S.status) S.status.radars.forEach((r, i) => {
     const node = document.getElementById("radar-live-" + i);
-    if (node && r.enabled) node.textContent = radarStateText(r.state) + " · " + t("framesRate", r.fps) + " · " + t("counters", r.bytes, r.frames, r.bad_frames);
+    if (node && r.enabled) node.textContent = liveText(r);
+    const detail = document.getElementById("radar-detail-" + i);
+    if (detail && r.enabled) detail.textContent = detailText(r);
   });
 }
 

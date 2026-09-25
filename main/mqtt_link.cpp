@@ -48,6 +48,7 @@ void on_mqtt(void*, esp_event_base_t, int32_t event_id, void* data) {
       const std::string filter = gpio::command_filter(g_settings.node_id);
       if (!filter.empty()) esp_mqtt_client_subscribe(g_client, filter.c_str(), 1);
       pins::publish_all();
+      radar::publish_presence_now();
       publish_info();
       break;
     }

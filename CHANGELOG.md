@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented here.
 
+## [0.2.5] - Six sensor models on the three ports
+
+- **A port carries one of six sensors**, chosen in the panel (or `radars[].model` in the settings), each at its own serial speed (or one set): the **HLK-LD2450** as before, the **HLK-LD2461** (a tracker with five tracks, decoded from its protocol document, whose report format the node sets to coordinates when the TX wire is connected because the factory default sends zones only), and four **presence sensors**, the **LD2410B/C**, **LD2412**, **LD2410S** and **Seeed MR24HPC1**. `docs/SENSORS.md` says what each one is, what was decoded, and what the documents leave open.
+- **Presence sensors become devices of the server**: each publishes `armor/device/<node>/<name>/state` as `{"triggered":…,"distance_cm":…}` when it changes, every 30 seconds, and whenever the broker reconnects. The panel shows presence and distance live, and the numbers of each model (zones of an LD2461, energies of an LD2410, flags of an MR24).
+- **The panel offers each model only its commands**: the LD2450 all of them; the LD2461 read information, zones (mapped onto its three "detect only inside / ignore inside" zones) and factory reset; the LD2410 and LD2412 read information, Bluetooth, restart and factory reset; the LD2410S and MR24HPC1 none. The node answers `unsupported` to the rest.
+- **Fixed:** the panel showed the raw code (`no_answer`) instead of a sentence when a radar command failed, because the texts were stored under a different name from the one the panel looks up.
+- **Fixed:** the two GATT tables of the Bluetooth service no longer give compiler warnings.
+- **Tests:** 748 checks (167 + 478 + 103 new for the sensors: every worked example of the manufacturers' documents, checksums, resynchronisation after garbage and settings of the models); the panel was exercised in a real browser (a presence sensor with its distance, the per-model buttons, the error text) in the seven languages and at phone width; the universal image builds. **No sensor has been connected to a node.**
+
+## [0.2.4] - Wi-Fi station with a network search, and configuration over Bluetooth
+
+- **Join a router's Wi-Fi.** A node can connect to the Wi-Fi of a router or an access point instead of (or besides) offering its own: *Connection: Wi-Fi* and the station in the panel. **Search for networks** lists what the node hears (name, signal, channel, security, strongest first, one line per name) and one click fills the name in. It works in every layout: an access point alone is briefly used as a station too, and a node with Wi-Fi off starts it just for the search (the node's own clients may notice a moment). `GET /api/v1/wifi/scan`.
+- **Bluetooth Low Energy configuration** for a node with no Ethernet cable: a NimBLE peripheral called `ARMOR-xxxxxx` with one GATT service (a write characteristic for requests and a notify one for answers) that carries the panel's operations as framed JSON: `hello`, `setup`, `login`, `config.get`, `config.put`, `wifi.scan`, `status`, `reboot`. The same set-up code and users as the panel, an administrator for any change, a throttle on wrong passwords, an encrypted link (LE Secure Connections, "just works", so it stops a passive listener and not someone present while the phone pairs). The setting *Bluetooth* is `setup` (only while the node has no user, the default), `always` or `off`; with `off` the stack is not even started. The protocol is documented in `docs/BLE_PROVISIONING.md`.
+- The panel and the Bluetooth channel share one implementation of the status, the settings and the search (`api_shared`). The framing, the operations and their access rules are host-tested with a fake backend (466 checks in `test_node`); the radio side builds and **has never run on a board nor against a phone**.
+
 ## [0.2.3] - A node with its own web panel, over-the-air updates, a shared Wi-Fi and pins for the server
 
 - **Settings in flash, one image for every node.** Identity, address, Wi-Fi, broker, radars, pins and users are one checked JSON document in the node's flash, edited from its own panel. The build's values (`Kconfig`) are only the *first* settings, so a build with none of them is a generic image and no password has to be compiled in. The pin, static-address and I2C options moved from `Kconfig` to the settings.
