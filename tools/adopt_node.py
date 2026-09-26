@@ -7,7 +7,7 @@ With the universal image (tools/build_node.sh generic) every board is the same u
 enough; for many, this tool does what the panel would, the same way for each:
 
     tools/adopt_node.py 192.168.0.181 --id perimetro-3 --name "North fence 3" --setup-code K7M2QX9PTR \\
-        --fleet secrets/fleet.json --broker-ssh-host 192.168.0.180 --broker-ssh-user hydra-umc --broker-ssh-key ~/.ssh/id_key
+        --fleet secrets/fleet.json --broker-ssh-host 192.168.0.180 --broker-ssh-user <user> --broker-ssh-key ~/.ssh/id_key
 
 1. it creates the administrator with the set-up code (shown on the node's USB console, or computed from its MAC and the fleet secret; a random password, written to secrets/<id>.admin, git-ignored, never printed);
 2. it asks the broker for the node's own identity (tools/provision_node.sh) unless you give --mqtt-username and --mqtt-password;

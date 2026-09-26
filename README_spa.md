@@ -4,7 +4,15 @@
 
 # 📡 ARMOR-RADAR
 
-<p align="center"><a href="README.md">🇺🇸 English</a> | 🇪🇸 <b>Español</b></p>
+<p align="center">
+  <a href="README.md">🇺🇸 English</a> |
+  🇪🇸 <b>Español</b> |
+  <a href="README_fra.md">🇫🇷 Français</a> |
+  <a href="README_ita.md">🇮🇹 Italiano</a> |
+  <a href="README_deu.md">🇩🇪 Deutsch</a> |
+  <a href="README_zho.md">🇨🇳 简体中文</a> |
+  <a href="README_jpn.md">🇯🇵 日本語</a>
+</p>
 
 ### Firmware del nodo de campo (Waveshare ESP32-S3-ETH, tres radares o sensores de presencia, Ethernet y Wi-Fi) con su propio panel web, y su núcleo probado en el ordenador
 
@@ -21,7 +29,7 @@
 
 ---
 
-## 1. 🛠️ DESCRIPCIÓN
+## 🎯 Descripción general
 
 * **Dos nodos de 270 grados:** cada Waveshare ESP32-S3-ETH lee hasta tres radares LD2450 en sus tres UART, montados con 75 grados de separación, por Ethernet cableada (W5500) con DHCP o dirección fija, alimentada por PoE o USB. *Añadir un nodo de 270°* en Studio crea los tres radares ya asignados al nodo.
 * **Un panel web en cada nodo,** con el aspecto de Studio y sus siete idiomas, integrado en el firmware: resumen, red, Wi-Fi, broker, radares, pines, usuarios, actualización del firmware y registro. Un nodo sin usuarios abre el Wi-Fi `ARMOR-SETUP-xxxxxx` y crea su primer administrador con un código de configuración; las contraseñas usan PBKDF2 con sal, las sesiones son tokens aleatorios y todos los ajustes viven en la flash del nodo, así que una imagen sirve para todos los nodos y no se compila ninguna contraseña ([el panel](docs/NODE_PANEL.md)).
@@ -34,32 +42,7 @@
 * **Luz ambiente y mensajes exactos al contrato:** el VEML7700 con rango automático; JSON de telemetría, salud e información que sigue los esquemas publicados y se niega a escribir algo inválido, con marcas de tiempo reales (SNTP) y un last will de MQTT. La telemetría se retiene mientras ningún radar informa, nunca un «todo despejado» vacío.
 * **Una imagen para todas las placas, como un producto de red:** el firmware es el mismo y la MAC distingue las placas (`armor-` y seis dígitos hasta que se le da nombre); `adopt_node.py` da a un nodo recién grabado su administrador, su identidad en el broker y los ajustes comunes de la flota por la red, con un código de configuración calculado desde su MAC, así que 5 nodos o 27 dan el mismo trabajo. **Herramientas de banco:** grabación por USB-C, un nodo simulado para trabajar en el panel y un conversor de un registro de tramas en bruto a un fixture de pruebas ([puesta en marcha](docs/BENCH_BRINGUP.md)).
 
----
-
-## 2. 🔧 COMPILAR Y EJECUTAR
-
-```bash
-cmake -S tests -B build/host && cmake --build build/host
-build/host/test_core && build/host/test_node && build/host/test_sensors   # 797 comprobaciones, -Werror
-build/host/emit_samples | python tests/check_contract.py
-node tools/panel_mock.mjs --user admin:adminpass123   # el panel sin placa
-python tools/make_fleet.py                             # una vez: el secreto de la flota y los ajustes comunes
-tools/build_node.sh generic                           # UNA imagen para todas las placas, en el contenedor de ESP-IDF
-```
-
-```bat
-tools\flash.bat generic COM5 monitor                  # cada placa, una vez, por USB-C
-```
-
-```bash
-tools/adopt_node.py 192.168.0.181 --id perimetro-3 --fleet secrets/fleet.json --broker-ssh-host <cm5> --broker-ssh-user <usuario>
-```
-
-Los tests en el ordenador necesitan cualquier compilador C++17 (Linux, WSL, MSYS2). Véanse la [puesta en marcha](docs/BENCH_BRINGUP.md), el [panel](docs/NODE_PANEL.md) y el [límite del hardware](docs/HARDWARE_BOUNDARY.md).
-
----
-
-## 📂 ESTRUCTURA DE DIRECTORIOS
+## 📂 Estructura del repositorio
 
 ```text
 ARMOR-RADAR/
@@ -82,7 +65,53 @@ ARMOR-RADAR/
 └── docs/                   BENCH_BRINGUP.md, NODE_PANEL.md, HARDWARE_BOUNDARY.md
 ```
 
----
+## 🛠️ Entorno de desarrollo
+
+```bash
+cmake -S tests -B build/host && cmake --build build/host
+build/host/test_core && build/host/test_node && build/host/test_sensors   # 797 checks, -Werror
+build/host/emit_samples | python tests/check_contract.py
+node tools/panel_mock.mjs --user admin:adminpass123   # the panel without a board
+python tools/make_fleet.py                             # once: the fleet secret and the shared settings
+tools/build_node.sh generic                           # ONE image for every board, in the ESP-IDF container
+```
+
+```bat
+tools\flash.bat generic COM5 monitor                  # each board, once, by USB-C
+```
+
+```bash
+tools/adopt_node.py 192.168.0.181 --id perimetro-3 --fleet secrets/fleet.json --broker-ssh-host <cm5> --broker-ssh-user <user>
+```
+
+Los tests en el ordenador necesitan cualquier compilador C++17 (Linux, WSL, MSYS2). Véanse la [puesta en marcha](docs/BENCH_BRINGUP.md), el [panel](docs/NODE_PANEL.md) y el [límite del hardware](docs/HARDWARE_BOUNDARY.md).
+
+## 🔗 Proyectos relacionados
+
+**A.R.M.O.R.** (Autonomous Radar & Multimodal Observation Range) es un sistema de seguridad perimetral hecho de repositorios independientes. Cada uno tiene su propia versión, sus propias pruebas y su propio README; esta es la familia:
+
+* **[ARMOR-COMMON](../ARMOR-COMMON)** - Contratos de mensajes, validadores, vectores de conformidad y tipos generados
+* **ARMOR-RADAR** (este repositorio) - Firmware del nodo de campo para ESP32-S3 con tres radares y su propio panel web
+* **[ARMOR-SOLAR](../ARMOR-SOLAR)** - Protocolos de inversores y baterías solares y los mensajes de un nodo pasarela
+* **[ARMOR-SERVER](../ARMOR-SERVER)** - Coordinador central: telemetría, alarmas, dispositivos, lecturas solares y cámaras
+* **[ARMOR-STUDIO](../ARMOR-STUDIO)** - Consola web: cámaras, radar, alarmas, energía solar y el diseñador de sitio 2D/3D
+* **[ARMOR-ANDROID-CONTROL](../ARMOR-ANDROID-CONTROL)** - Cliente Android del operador con radar 2D/3D en vivo
+* **[ARMOR-SERVER-AI](../ARMOR-SERVER-AI)** - Política de inferencia visual que explica sus decisiones y nunca actúa
+* **[ARMOR-VOICE-AI](../ARMOR-VOICE-AI)** - Intenciones de voz sin conexión con una confirmación imposible de falsificar
+* **[ARMOR-HARDWARE](../ARMOR-HARDWARE)** - Cajas, electrónica y la matriz de aceptación en banco
+* **[ARMOR-DEVOPS](../ARMOR-DEVOPS)** - Despliegue, el banco de pruebas de la CM5, copias de seguridad y TLS
+* **[ARMOR-SIMULATOR](../ARMOR-SIMULATOR)** - Simulador de telemetría sin conexión con fallos repetibles
+* **[ARMOR-DOCS](../ARMOR-DOCS)** - Arquitectura, base de seguridad y la matriz de capacidades
+
+## 📚 Documentación y comunidad
+
+Dónde leer más:
+
+* [Matriz de capacidades: qué está probado y qué no](../ARMOR-DOCS/docs/CAPABILITY_MATRIX.md)
+* [Catálogo de proyectos: versiones y cómo dependen unos de otros](../ARMOR-DOCS/docs/PROJECT_CATALOG.md)
+* [Historial de cambios de este repositorio](CHANGELOG.md)
+* [Licencia (GPL-3.0-or-later)](LICENSE)
+* Preguntas, ideas e informes: electrohobby3d@gmail.com
 
 ## 👤 AUTOR
 

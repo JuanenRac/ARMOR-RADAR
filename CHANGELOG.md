@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented here.
 
+## [0.2.7] - Placeholders in the usage lines
+
+- The usage lines of `adopt_node.py`, `provision_node.sh` and the bench guide show `<user>` and `~/.ssh/id_key` where they showed the names of a real account and key. No code changed.
+
 ## [0.2.6] - HTTPS for the panel, and stable identities for the tracks
 
 - **The panel over HTTPS.** *Network > Panel security*: HTTP and HTTPS (the default), HTTPS only (port 80 sends the browser to HTTPS), or HTTP only. The node makes its own certificate the first time (an ECDSA P-256 key and a self-signed certificate for its id, kept in flash and erased by a factory reset), so the password and the session cookie no longer travel in clear on the network; the cookie is marked Secure over HTTPS. The panel shows the certificate's SHA-256 fingerprint to compare with the browser's warning. If the certificate cannot be made, the node stays on plain HTTP rather than lose its panel.

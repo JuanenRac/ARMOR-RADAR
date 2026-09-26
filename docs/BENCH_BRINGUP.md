@@ -66,7 +66,7 @@ Ethernet from its panel (*Firmware and log*).
 **Adopting.** Find the node's address (your router's list of DHCP clients, by the MAC the console showed, or `armor-xxxxxx`), then:
 
     tools/adopt_node.py 192.168.0.181 --id perimetro-3 --name "North fence 3" --fleet secrets/fleet.json \
-        --broker-ssh-host 192.168.0.180 --broker-ssh-user hydra-umc --broker-ssh-key ~/.ssh/id_ed25519_hydra_umc
+        --broker-ssh-host 192.168.0.180 --broker-ssh-user <user> --broker-ssh-key ~/.ssh/id_key
 
 It asks the broker for the node's identity (`provision_node.sh`), creates the administrator (a random password kept in `secrets/<id>.admin`), applies
 the fleet's settings and the node's own, and restarts it. `--ip 192.168.0.60 --gateway 192.168.0.1` gives it a fixed address instead of DHCP.

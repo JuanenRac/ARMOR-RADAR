@@ -2,7 +2,7 @@
 # ARMOR-RADAR - gives a node its identity on the bench broker and writes its settings file.
 # Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
 #
-#   tools/provision_node.sh perimetro-1 --host 192.168.0.180 --user hydra-umc --key ~/.ssh/id_key [--broker-host 192.168.0.180]
+#   tools/provision_node.sh perimetro-1 --host 192.168.0.180 --user <user> --key ~/.ssh/id_key [--broker-host 192.168.0.180]
 #
 # Runs ARMOR-DEVOPS's mqtt_identity.sh on the test bench over SSH (its own sudo), captures the password it prints once, and writes it
 # straight into secrets/<node>.conf (mode 600, git-ignored), together with a setup code for the node's first administrator. Neither is shown on the
