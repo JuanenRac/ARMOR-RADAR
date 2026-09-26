@@ -48,22 +48,24 @@
 ```text
 ARMOR-RADAR/
 ├── main/
-│   ├── app_main.cpp        start-up: settings, radars, pins, network, panel, broker
+│   ├── app_main.cpp        start-up: settings, radars, pins, network, panel, broker, Bluetooth
 │   ├── node_store.cpp      settings and users in flash
 │   ├── network.cpp         Ethernet, Wi-Fi access point and bridge, station
 │   ├── web_server.cpp      the panel and its JSON API, login, update
-│   ├── radar_manager.cpp   UARTs, frames, health, command channel
+│   ├── api_shared.cpp      the operations the panel and Bluetooth share (status, settings, Wi-Fi scan)
+│   ├── ble_provision.cpp   configuration from a phone over Bluetooth (NimBLE)
+│   ├── radar_manager.cpp   UARTs, frames, health, command channel (armor_radar.cpp, radar_tracks.hpp)
 │   ├── gpio_manager.cpp    the pins mapped for the server
 │   ├── mqtt_link.cpp       clock, health, telemetry, information, pin topics
-│   ├── board_ethernet.cpp, light_sensor.cpp, log_buffer.cpp, entropy.cpp
+│   ├── board_ethernet.cpp, light_sensor.cpp, tls_cert.cpp, log_buffer.cpp, entropy.cpp
 │   ├── Kconfig.projbuild   the first settings of a build
-│   └── core/               framer, ld2450, ld2450_command, node_config, board_pins, network_plan, auth, gpio_logic, json, veml7700, telemetry_json...
+│   └── core/               framer, ld2450, ld2450_command, ld2461, presence, sensor_model, node_config, board_pins, network_plan, auth, ble_frame, ble_dispatch, gpio_logic, json, veml7700, telemetry_json...
 ├── panel/                  index.html, app.js, text.js (7 languages), style.css
-├── tests/                  test_core.cpp, test_node.cpp, emit_samples.cpp, check_contract.py, test_tools.py
+├── tests/                  test_core.cpp, test_node.cpp, test_sensors.cpp, test_board_wifi.cpp, emit_samples.cpp, check_contract.py, test_tools.py
 ├── tools/                  build_node.sh, make_fleet.py, adopt_node.py, provision_node.sh, flash.bat, pack_panel.py, panel_mock.mjs, frames_to_fixture.py
 ├── secrets/                node.conf.example, fleet.example.json (the real files are git-ignored)
-├── partitions.csv, sdkconfig.defaults
-└── docs/                   BENCH_BRINGUP.md, NODE_PANEL.md, HARDWARE_BOUNDARY.md
+├── partitions.csv, sdkconfig.defaults, sdkconfig.board.*
+└── docs/                   BENCH_BRINGUP.md, NODE_PANEL.md, BLE_PROVISIONING.md, SENSORS.md, HARDWARE_BOUNDARY.md
 ```
 
 ## 🛠️ Ambiente di sviluppo

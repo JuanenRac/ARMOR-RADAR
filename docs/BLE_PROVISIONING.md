@@ -60,7 +60,7 @@ Errors: `bad_request` (id 0: what arrived was not a request), `unknown_op`, `set
 
 | op | Needs | args | data of the answer |
 |---|---|---|---|
-| `hello` | nothing | | `node_id`, `name`, `mac`, `firmware`, `setup` (true when the node has no user), `layout`, `has_ip`, `ip`, `sta_connected`, `sta_ssid`, `ap_active` |
+| `hello` | nothing | | `kind` (`radar`, `solar` or `electrical`), `node_id`, `name`, `mac`, `firmware`, `setup` (true when the node has no user), `layout`, `has_ip`, `ip`, `sta_connected`, `sta_ssid`, `ap_active` |
 | `setup` | a node with no user | `code`, `user`, `password` | `{"restart_required":true}`; the connection is now signed in as that administrator, and the node keeps its set-up state until a `reboot` |
 | `login` | a node with users | `user`, `password` | `{"role":"admin"}` or `"viewer"` |
 | `logout` | | | |

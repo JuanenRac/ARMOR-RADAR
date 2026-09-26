@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented here.
 
+## [0.2.9] - The Bluetooth `hello` says what kind of node it is
+
+- The answer to `hello` on the Bluetooth configuration channel now carries `kind` (`radar`; the solar and electrical nodes say `solar` and `electrical`), so the app can tell the three kinds of node apart: the identifier of a radar node (`armor-` and the MAC) says nothing about it. Nothing else of the protocol changes.
+
 ## [0.2.8] - One firmware for two boards: with Ethernet and without
 
 - **A version for the boards with no Ethernet.** The firmware is one code base with two **board profiles** chosen when the image is built: `tools/build_node.sh generic` (or `generic s3-eth`) writes `dist/generic-s3-eth.bin` for the Waveshare ESP32-S3-ETH, as before; `tools/build_node.sh generic s3-wifi` writes `dist/generic-s3-wifi.bin` for an **ESP32-S3-WROOM-1 N16R8** (16 MB flash, 8 MB octal PSRAM, two USB-C sockets) that has no Ethernet. An image is for ONE board: flash it only to that one (`tools\flash.bat NODE COMx [s3-eth|s3-wifi]` takes the board too).

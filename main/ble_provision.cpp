@@ -56,7 +56,7 @@ class NodeBackend : public ble::Backend {
     const config::Settings s = store::settings();
     const network::Status n = network::status();
     json::Writer w;
-    w.begin_object().field("node_id", s.node_id).field("name", s.node_name).field("mac", n.mac).field("firmware", api::version_text()).field("setup", store::users_empty())
+    w.begin_object().field("kind", "radar").field("node_id", s.node_id).field("name", s.node_name).field("mac", n.mac).field("firmware", api::version_text()).field("setup", store::users_empty())
         .field("layout", n.layout).field("has_ip", n.has_ip).field("ip", n.ip).field("sta_connected", n.sta_connected).field("sta_ssid", n.sta_ssid).field("ap_active", n.ap_active).end_object();
     return w.str();
   }

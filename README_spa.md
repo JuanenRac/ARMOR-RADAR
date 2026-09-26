@@ -48,22 +48,24 @@
 ```text
 ARMOR-RADAR/
 ├── main/
-│   ├── app_main.cpp        arranque: ajustes, radares, pines, red, panel, broker
+│   ├── app_main.cpp        arranque: ajustes, radares, pines, red, panel, broker, Bluetooth
 │   ├── node_store.cpp      ajustes y usuarios en la flash
 │   ├── network.cpp         Ethernet, punto de acceso Wi-Fi y puente, estación
 │   ├── web_server.cpp      el panel y su API JSON, acceso, actualización
-│   ├── radar_manager.cpp   UART, tramas, salud, canal de comandos
+│   ├── api_shared.cpp      las operaciones que comparten el panel y el Bluetooth (estado, ajustes, búsqueda de Wi-Fi)
+│   ├── ble_provision.cpp   configuración desde el móvil por Bluetooth (NimBLE)
+│   ├── radar_manager.cpp   UART, tramas, salud, canal de comandos (armor_radar.cpp, radar_tracks.hpp)
 │   ├── gpio_manager.cpp    los pines asignados para el servidor
 │   ├── mqtt_link.cpp       hora, salud, telemetría, información, temas de pines
-│   ├── board_ethernet.cpp, light_sensor.cpp, log_buffer.cpp, entropy.cpp
+│   ├── board_ethernet.cpp, light_sensor.cpp, tls_cert.cpp, log_buffer.cpp, entropy.cpp
 │   ├── Kconfig.projbuild   los primeros ajustes de una compilación
-│   └── core/               framer, ld2450, ld2450_command, node_config, board_pins, network_plan, auth, gpio_logic, json, veml7700, telemetry_json...
+│   └── core/               framer, ld2450, ld2450_command, ld2461, presence, sensor_model, node_config, board_pins, network_plan, auth, ble_frame, ble_dispatch, gpio_logic, json, veml7700, telemetry_json...
 ├── panel/                  index.html, app.js, text.js (7 idiomas), style.css
-├── tests/                  test_core.cpp, test_node.cpp, emit_samples.cpp, check_contract.py, test_tools.py
+├── tests/                  test_core.cpp, test_node.cpp, test_sensors.cpp, test_board_wifi.cpp, emit_samples.cpp, check_contract.py, test_tools.py
 ├── tools/                  build_node.sh, make_fleet.py, adopt_node.py, provision_node.sh, flash.bat, pack_panel.py, panel_mock.mjs, frames_to_fixture.py
 ├── secrets/                node.conf.example, fleet.example.json (los reales están fuera de git)
-├── partitions.csv, sdkconfig.defaults
-└── docs/                   BENCH_BRINGUP.md, NODE_PANEL.md, HARDWARE_BOUNDARY.md
+├── partitions.csv, sdkconfig.defaults, sdkconfig.board.*
+└── docs/                   BENCH_BRINGUP.md, NODE_PANEL.md, BLE_PROVISIONING.md, SENSORS.md, HARDWARE_BOUNDARY.md
 ```
 
 ## 🛠️ Entorno de desarrollo
