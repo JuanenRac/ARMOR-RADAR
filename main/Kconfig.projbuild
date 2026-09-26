@@ -39,6 +39,15 @@ config ARMOR_RADAR_COUNT
         (defaults: RX 16, 17, 18; TX 15, 21, 38).
         In Studio a radar is the "channel" 1, 2 or 3 of this node.
 
+config ARMOR_TRACK_STABILISER
+    bool "Keep a track's identity from frame to frame"
+    default y
+    help
+        A radar reports "a target in slot 1, 2, 3" and the slot is not an identity. With this on, the node matches each
+        frame's targets to the ones it followed before, so a person keeps the same track id (the server counts and times by
+        it), a lost frame does not make a target flicker, and the position is smoothed a little. Turn it off on the bench
+        to compare with the raw slots.
+
 config ARMOR_RADAR_HEX_DUMP
     bool "Log the first frames of every radar as hexadecimal"
     default n

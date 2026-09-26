@@ -17,6 +17,7 @@ extern "C" {
 #include "esp_app_desc.h"
 #include "esp_heap_caps.h"
 #include "esp_http_server.h"
+#include "esp_https_server.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
 #include "esp_partition.h"
@@ -28,6 +29,7 @@ extern "C" {
 #include "core/auth.hpp"
 #include "core/gpio_logic.hpp"
 #include "core/json.hpp"
+#include "core/web_policy.hpp"
 #include "core/ld2450_command.hpp"
 #include "entropy.hpp"
 #include "gpio_manager.hpp"
@@ -38,6 +40,7 @@ extern "C" {
 #include "network.hpp"
 #include "node_store.hpp"
 #include "radar_manager.hpp"
+#include "tls_cert.hpp"
 
 extern const std::uint8_t index_html_gz_start[] asm("_binary_index_html_gz_start");
 extern const std::uint8_t index_html_gz_end[] asm("_binary_index_html_gz_end");
@@ -59,7 +62,12 @@ std::mutex g_lock;
 auth::SessionTable g_sessions;
 auth::LoginThrottle g_throttle;
 config::Settings g_started_with;
-httpd_handle_t g_server = nullptr;
+httpd_handle_t g_server = nullptr;       // plain HTTP, port 80
+httpd_handle_t g_tls_server = nullptr;   // HTTPS, port 443, when the settings ask for it
+tlscert::Material g_material;
+
+// Whether a request came over TLS: it arrived on the HTTPS server.
+bool is_tls(httpd_req_t* r) { return g_tls_server != nullptr && r->handle == g_tls_server; }
 
 std::uint64_t now_ms() { return static_cast<std::uint64_t>(esp_timer_get_time()) / 1000ULL; }
 
@@ -219,7 +227,7 @@ void start_session(httpd_req_t* r, const std::string& user, auth::Role role) {
     std::lock_guard<std::mutex> guard(g_lock);
     g_sessions.create(token, user, role, now_ms());
   }
-  const std::string cookie = std::string(kCookie) + "=" + token + "; Path=/; HttpOnly; SameSite=Strict; Max-Age=1800";
+  const std::string cookie = std::string(kCookie) + "=" + token + "; " + webpolicy::cookie_attributes(is_tls(r), 1800);
   httpd_resp_set_hdr(r, "Set-Cookie", cookie.c_str());
 }
 
@@ -302,7 +310,8 @@ esp_err_t post_logout(httpd_req_t* r) {
     std::lock_guard<std::mutex> guard(g_lock);
     g_sessions.end(token);
   }
-  httpd_resp_set_hdr(r, "Set-Cookie", "armor_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0");
+  const std::string expired = std::string(kCookie) + "=; " + webpolicy::cookie_attributes(is_tls(r), 0);
+  httpd_resp_set_hdr(r, "Set-Cookie", expired.c_str());
   return send_ok(r);
 }
 
@@ -638,6 +647,44 @@ esp_err_t page_handler(httpd_req_t* r) {
   return send_asset(r, index_html_gz_start, index_html_gz_end, "text/html");
 }
 
+// In https mode the plain-HTTP port only sends the browser to the same address over HTTPS.
+esp_err_t redirect_handler(httpd_req_t* r) {
+  const std::string location = webpolicy::redirect_location(header(r, "Host"), r->uri);
+  if (location.empty()) return send_error(r, 400, "bad_host");
+  httpd_resp_set_status(r, "308 Permanent Redirect");
+  httpd_resp_set_hdr(r, "Location", location.c_str());
+  httpd_resp_set_hdr(r, "Cache-Control", "no-store");
+  return httpd_resp_send(r, nullptr, 0);
+}
+
+void register_handlers(httpd_handle_t server, bool redirect_only) {
+  const httpd_method_t methods[] = {HTTP_GET, HTTP_POST, HTTP_PUT, HTTP_DELETE};
+  if (redirect_only) {
+    for (httpd_method_t method : methods) {
+      httpd_uri_t any{};
+      any.uri = "/*";
+      any.method = method;
+      any.handler = redirect_handler;
+      httpd_register_uri_handler(server, &any);
+    }
+    return;
+  }
+  for (httpd_method_t method : methods) {
+    httpd_uri_t api{};
+    api.uri = "/api/*";
+    api.method = method;
+    api.handler = api_handler;
+    httpd_register_uri_handler(server, &api);
+  }
+  for (const char* path : {"/", "/app.js", "/style.css"}) {
+    httpd_uri_t page{};
+    page.uri = path;
+    page.method = HTTP_GET;
+    page.handler = page_handler;
+    httpd_register_uri_handler(server, &page);
+  }
+}
+
 void restart_now(void*) { esp_restart(); }
 }  // namespace
 
@@ -653,33 +700,56 @@ void restart_after(unsigned delay_ms) {
   esp_timer_start_once(timer, static_cast<std::uint64_t>(delay_ms) * 1000ULL);
 }
 
+TlsStatus tls_status() {
+  TlsStatus s;
+  s.mode = to_text(g_started_with.web);
+  s.running = g_tls_server != nullptr;
+  s.fingerprint = g_material.sha256;
+  return s;
+}
+
 bool start(const config::Settings& settings) {
   g_started_with = settings;
+  const bool tls_wanted = webpolicy::serves_https(settings.web);
+  const bool redirect = webpolicy::http_redirects(settings.web);
+  bool tls_ok = false;
+  if (tls_wanted) {
+    // The certificate is made the first time (a second or two) and kept; without one the node falls back to plain HTTP rather than lose its panel.
+    if (tlscert::load_or_create(settings.node_id, g_material)) {
+      httpd_ssl_config_t ssl = HTTPD_SSL_CONFIG_DEFAULT();
+      ssl.httpd.stack_size = 10240;
+      ssl.httpd.max_uri_handlers = 12;
+      ssl.httpd.max_open_sockets = 4;
+      ssl.httpd.lru_purge_enable = true;
+      ssl.httpd.recv_wait_timeout = 10;
+      ssl.httpd.send_wait_timeout = 10;
+      ssl.httpd.ctrl_port = 32769;   // the plain server keeps the default control port
+      ssl.httpd.uri_match_fn = httpd_uri_match_wildcard;
+      ssl.servercert = reinterpret_cast<const uint8_t*>(g_material.certificate_pem.data());
+      ssl.servercert_len = g_material.certificate_pem.size();
+      ssl.prvtkey_pem = reinterpret_cast<const uint8_t*>(g_material.key_pem.data());
+      ssl.prvtkey_len = g_material.key_pem.size();
+      if (httpd_ssl_start(&g_tls_server, &ssl) == ESP_OK) {
+        register_handlers(g_tls_server, false);
+        tls_ok = true;
+        ESP_LOGI(kTag, "the panel is also on port 443 (HTTPS), certificate SHA-256 %s", g_material.sha256.c_str());
+      } else {
+        g_tls_server = nullptr;
+        ESP_LOGE(kTag, "the HTTPS server could not be started: the panel stays on plain HTTP");
+      }
+    }
+  }
   httpd_config_t config = HTTPD_DEFAULT_CONFIG();
   config.stack_size = 10240;
   config.max_uri_handlers = 12;
-  config.max_open_sockets = 7;
+  config.max_open_sockets = 4;
   config.lru_purge_enable = true;
   config.recv_wait_timeout = 10;
   config.send_wait_timeout = 10;
   config.uri_match_fn = httpd_uri_match_wildcard;
-  if (httpd_start(&g_server, &config) != ESP_OK) { ESP_LOGE(kTag, "the web server could not be started"); return false; }
-  const httpd_method_t methods[] = {HTTP_GET, HTTP_POST, HTTP_PUT, HTTP_DELETE};
-  for (httpd_method_t method : methods) {
-    httpd_uri_t api{};
-    api.uri = "/api/*";
-    api.method = method;
-    api.handler = api_handler;
-    httpd_register_uri_handler(g_server, &api);
-  }
-  for (const char* path : {"/", "/app.js", "/style.css"}) {
-    httpd_uri_t page{};
-    page.uri = path;
-    page.method = HTTP_GET;
-    page.handler = page_handler;
-    httpd_register_uri_handler(g_server, &page);
-  }
-  ESP_LOGI(kTag, "the panel is on port 80");
+  if (httpd_start(&g_server, &config) != ESP_OK) { ESP_LOGE(kTag, "the web server could not be started"); return tls_ok; }
+  register_handlers(g_server, redirect && tls_ok);   // never a redirect to a server that is not there
+  ESP_LOGI(kTag, "the panel is on port 80%s", redirect && tls_ok ? " (it sends the browser to HTTPS)" : "");
   return true;
 }
 

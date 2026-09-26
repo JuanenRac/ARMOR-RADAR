@@ -34,6 +34,10 @@ auth::Result user_remove(std::string_view name);
 // Erases the settings and the users: the node starts again in setup. Returns false when flash erasing failed.
 bool factory_reset();
 
+// Other things the node keeps in flash (its TLS certificate and key): one named blob each. False when it is not there or flash failed.
+bool blob_read(const char* key, std::string& out);
+bool blob_write(const char* key, const std::string& value);
+
 // The setup code: the build's fixed one, or a random one made at start. Only meaningful while users_empty().
 const std::string& setup_code();
 

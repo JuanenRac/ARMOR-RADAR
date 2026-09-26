@@ -6,6 +6,7 @@
 #include <vector>
 #include "../main/core/auth.hpp"
 #include "../main/core/ble_dispatch.hpp"
+#include "../main/core/web_policy.hpp"
 #include "../main/core/board_pins.hpp"
 #include "../main/core/gpio_logic.hpp"
 #include "../main/core/json.hpp"
@@ -851,7 +852,39 @@ static void test_sensor_models_in_settings() {
   CHECK(config::load(stored, base, back, problems) && back.radars[0].model == "ld2461" && back.radars[0].baud == 9600 && back.radars[1].model == "mr24hpc1" && back.radars[1].name == "hall" && config::to_json(back, true) == stored);
 }
 
+static void test_web_policy() {
+  using namespace armor::webpolicy;
+  CHECK(serves_https(config::WebMode::kBoth) && serves_https(config::WebMode::kHttps) && !serves_https(config::WebMode::kHttp));
+  CHECK(http_redirects(config::WebMode::kHttps) && !http_redirects(config::WebMode::kBoth) && !http_redirects(config::WebMode::kHttp));
+  CHECK(clean_host("192.168.0.181") == "192.168.0.181" && clean_host("armor-a1b2c3.local:80") == "armor-a1b2c3.local" && clean_host("node-1") == "node-1");
+  CHECK(clean_host("").empty() && clean_host(":80").empty() && clean_host("evil.example/x").empty() && clean_host("a b").empty() && clean_host("-a").empty() && clean_host(".a").empty());
+  CHECK(clean_host("[::1]:80").empty() && clean_host(std::string(254, 'a')).empty() && clean_host("a@b").empty());
+  CHECK(redirect_location("192.168.0.181:80", "/") == "https://192.168.0.181/");
+  CHECK(redirect_location("armor.local", "/api/v1/status?x=1") == "https://armor.local/api/v1/status?x=1");
+  CHECK(redirect_location("evil.example/", "/").empty() && redirect_location("a.b", "").empty() && redirect_location("a.b", "//evil.example/x").empty());
+  CHECK(redirect_location("a.b", "/x y").empty() && redirect_location("a.b", "/x\\y").empty() && redirect_location("a.b", "x").empty());
+  CHECK(cookie_attributes(false, 1800) == "Path=/; HttpOnly; SameSite=Strict; Max-Age=1800");
+  CHECK(cookie_attributes(true, 0) == "Path=/; HttpOnly; SameSite=Strict; Secure; Max-Age=0");
+  // the setting: default both, the three words, anything else refused, and it survives a round trip
+  const config::Settings base = valid_settings();
+  config::Settings out;
+  config::Problems problems;
+  CHECK(base.web == config::WebMode::kBoth);
+  CHECK(config::load(R"({"web":{"mode":"https"}})", base, out, problems) && out.web == config::WebMode::kHttps);
+  problems.clear();
+  CHECK(config::load(R"({"web":{"mode":"http"}})", base, out, problems) && out.web == config::WebMode::kHttp);
+  problems.clear();
+  CHECK(!config::load(R"({"web":{"mode":"ftp"}})", base, out, problems) && has_problem(problems, "web.mode", "invalid"));
+  problems.clear();
+  config::Settings mixed = base;
+  mixed.web = config::WebMode::kHttps;
+  const std::string stored = config::to_json(mixed, true);
+  config::Settings back;
+  CHECK(config::load(stored, base, back, problems) && back.web == config::WebMode::kHttps && config::to_json(back, true) == stored);
+}
+
 int main() {
+  test_web_policy();
   test_sensor_models_in_settings();
   test_ble_framing();
   test_ble_requests();

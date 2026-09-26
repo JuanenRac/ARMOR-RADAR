@@ -3,7 +3,9 @@
 // Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
 #include <cstdio>
 #include <vector>
+#include "../main/core/gpio_logic.hpp"
 #include "../main/core/ld2450.hpp"
+#include "../main/core/presence.hpp"
 #include "../main/core/telemetry_json.hpp"
 
 using namespace armor;
@@ -42,5 +44,16 @@ int main() {
   } else {
     std::printf("ERROR ld2450\n");
   }
+  // What a node publishes for the devices of the server: presence sensors and mapped pins. These are not in ARMOR-COMMON's contract (a device state is
+  // the server's own vocabulary); the server's tests read them from ARMOR-SERVER/tests/fixtures/firmware_device_states.txt.
+  const auto device = [](const std::string& payload) { std::printf("device_state %s\n", payload.c_str()); };
+  device(presence::device_payload(true, 240));    // an LD2410 with somebody at 2.4 m
+  device(presence::device_payload(true, -1));     // an MR24HPC1: occupied, no distance
+  device(presence::device_payload(false, -1));    // nobody
+  device(gpio::report_boolean("triggered", true));
+  device(gpio::report_boolean("open", false));
+  device(gpio::report_boolean("on", true));
+  device(gpio::report_number("brightness", 40));
+  device(gpio::report_number("battery", 12.6));
   return 0;
 }

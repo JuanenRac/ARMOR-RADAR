@@ -8,6 +8,7 @@
 #include "../main/core/ld2461.hpp"
 #include "../main/core/presence.hpp"
 #include "../main/core/sensor_model.hpp"
+#include "../main/core/track_stabiliser.hpp"
 #include "../main/core/var_framer.hpp"
 
 static int failures = 0;
@@ -283,7 +284,102 @@ static void test_mr24() {
   CHECK(!decode_mr24(cut.data(), cut.size(), e));
 }
 
+static Track det(int x, int y, int speed = 0) { return Track{1, 9, static_cast<std::int16_t>(x), static_cast<std::int16_t>(y), static_cast<std::int16_t>(speed)}; }
+
+static void test_track_stabiliser() {
+  TrackStabiliser stab;
+  Track out[kTracksPerRadar];
+  std::uint64_t now = 1000;
+  // a target walking at 200 mm per frame keeps its id, whatever slot the radar puts it in
+  Track a[1] = {det(1000, 2000)};
+  CHECK(stab.update(a, 1, now, out) == 1);
+  const std::uint8_t first_id = out[0].track_id;
+  CHECK(first_id == 1 && out[0].sensor_id == 1);
+  for (int step = 1; step <= 10; ++step) {
+    now += 100;
+    a[0] = det(1000 + 200 * step, 2000);
+    CHECK(stab.update(a, 1, now, out) == 1 && out[0].track_id == first_id);
+  }
+  // the smoothing lags a little behind a moving target but never by more than the step
+  CHECK(out[0].x_mm < 3000 && out[0].x_mm > 3000 - 400);
+  // two targets: each keeps its own id when the radar swaps their order, and a new one far away gets a new id
+  TrackStabiliser two;
+  Track pair[2] = {det(-1500, 2000), det(1500, 3000)};
+  CHECK(two.update(pair, 2, 5000, out) == 2);
+  const std::uint8_t left = out[0].track_id, right = out[1].track_id;
+  CHECK(left != right);
+  Track swapped[2] = {det(1520, 3020), det(-1480, 2020)};
+  CHECK(two.update(swapped, 2, 5100, out) == 2);
+  CHECK((out[0].track_id == left && out[1].track_id == right) || (out[0].track_id == right && out[1].track_id == left));
+  for (std::size_t i = 0; i < 2; ++i) CHECK(out[i].track_id == (out[i].x_mm < 0 ? left : right));
+  Track three[3] = {det(-1480, 2020), det(1520, 3020), det(0, 5000)};
+  CHECK(two.update(three, 3, 5200, out) == 3);
+  int fresh = 0;
+  for (std::size_t i = 0; i < 3; ++i) if (out[i].track_id != left && out[i].track_id != right) ++fresh;
+  CHECK(fresh == 1);
+  // one lost frame: the target is still reported where it was, with the same id, and the id is kept when it comes back
+  TrackStabiliser lost;
+  Track one[1] = {det(500, 1500, 300)};
+  lost.update(one, 1, 9000, out);
+  const std::uint8_t id = out[0].track_id;
+  CHECK(lost.update(one, 0, 9100, out) == 1 && out[0].track_id == id && out[0].speed_mm_s == 0);
+  CHECK(lost.update(one, 0, 9200, out) == 1);
+  CHECK(lost.update(one, 0, 9300, out) == 0);          // no longer reported after the coasting frames
+  one[0] = det(560, 1520);
+  CHECK(lost.update(one, 1, 9400, out) == 1 && out[0].track_id == id);   // but still remembered
+  // gone for more than the survival frames: the next detection is somebody new
+  TrackStabiliser gone;
+  gone.update(one, 1, 20000, out);
+  const std::uint8_t old_id = out[0].track_id;
+  for (int f = 1; f <= 7; ++f) gone.update(one, 0, 20000 + 100 * f, out);
+  CHECK(gone.update(one, 1, 20800, out) == 1 && out[0].track_id != old_id);
+  // a long silence forgets everyone
+  TrackStabiliser silent;
+  silent.update(one, 1, 30000, out);
+  const std::uint8_t before = out[0].track_id;
+  silent.update(one, 1, 33000, out);
+  CHECK(out[0].track_id != before);
+  // a target that jumps beyond the gate is a new target, and jitter inside it is calmed
+  TrackStabiliser jump;
+  jump.update(one, 1, 40000, out);
+  const std::uint8_t start = out[0].track_id;
+  Track far[1] = {det(560 + 1500, 1520)};
+  const std::size_t after_jump = jump.update(far, 1, 40100, out);
+  bool new_one = false;
+  for (std::size_t i = 0; i < after_jump; ++i) new_one = new_one || (out[i].track_id != start && out[i].x_mm > 1500);
+  CHECK(new_one);   // the one that moved away is still remembered for a moment, and the new one has its own id
+  TrackStabiliser jitter;
+  int lowest = 100000, highest = -100000;
+  for (int f = 0; f < 40; ++f) {
+    Track noisy[1] = {det(2000 + (f % 2 == 0 ? 120 : -120), 3000)};
+    jitter.update(noisy, 1, 50000 + 100 * f, out);
+    if (f >= 10) { lowest = std::min<int>(lowest, out[0].x_mm); highest = std::max<int>(highest, out[0].x_mm); }
+  }
+  CHECK(highest - lowest < 240 && highest - lowest > 0);
+  // the ids wrap from 255 to 1 and never use 0, and a full house evicts the longest-missing track for a new one
+  TrackStabiliser wrap;
+  bool zero = false, wrapped = false;
+  std::uint8_t previous = 0;
+  for (int n = 0; n < 300; ++n) {
+    Track lone[1] = {det(-3000 + (n % 2) * 6000, 4000)};
+    const std::uint64_t at = 60000 + 3000 * n;   // each one after a long silence, so each is new
+    wrap.update(lone, 1, at, out);
+    zero = zero || out[0].track_id == 0;
+    wrapped = wrapped || (previous == 255 && out[0].track_id == 1);
+    previous = out[0].track_id;
+  }
+  CHECK(!zero && wrapped);
+  TrackStabiliser crowd;
+  Track five[5] = {det(-2000, 1000), det(-1000, 1000), det(0, 1000), det(1000, 1000), det(2000, 1000)};
+  CHECK(crowd.update(five, 5, 70000, out) == 5);
+  Track more[5] = {det(-2000, 1000), det(-1000, 1000), det(0, 1000), det(1000, 1000), det(2000, 1000)};
+  CHECK(crowd.update(more, 5, 70100, out) == 5);
+  Track sixth[1] = {det(-2900, 3900)};
+  CHECK(crowd.update(sixth, 1, 70200, out) >= 1 && crowd.update(sixth, 1, 70300, out) >= 1);
+}
+
 int main() {
+  test_track_stabiliser();
   test_models();
   test_var_framer();
   test_ld2461();

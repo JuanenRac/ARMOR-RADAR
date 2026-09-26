@@ -141,6 +141,9 @@ bool save_settings(const config::Settings& s) {
   return true;
 }
 
+bool blob_read(const char* key, std::string& out) { return read_blob(key, out); }
+bool blob_write(const char* key, const std::string& value) { return write_blob(key, value); }
+
 bool users_empty() {
   std::lock_guard<std::mutex> guard(g_lock);
   return g_users.empty();

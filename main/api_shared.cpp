@@ -17,6 +17,7 @@ extern "C" {
 #include "network.hpp"
 #include "node_store.hpp"
 #include "radar_manager.hpp"
+#include "web_server.hpp"
 
 namespace armor::api {
 
@@ -64,6 +65,8 @@ std::string status_json() {
   write_network(w);
   w.key("mqtt").begin_object().field("enabled", m.enabled).field("connected", m.connected).field("clock_set", m.clock_set).field("published", static_cast<long long>(m.published)).field("withheld", m.withheld).end_object();
   const float lux = light_lux();
+  const web::TlsStatus tls = web::tls_status();
+  w.key("web").begin_object().field("mode", tls.mode).field("https", tls.running).field("cert_sha256", tls.fingerprint).end_object();
   w.key("lux");
   if (lux >= 0.0f) w.number(lux, 1); else w.null();
   w.key("radars").begin_array();

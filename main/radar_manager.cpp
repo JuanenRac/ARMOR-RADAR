@@ -22,6 +22,7 @@ extern "C" {
 #include "core/ld2461.hpp"
 #include "core/presence.hpp"
 #include "core/sensor_model.hpp"
+#include "core/track_stabiliser.hpp"
 #include "core/var_framer.hpp"
 
 namespace armor::radar {
@@ -38,6 +39,7 @@ struct Line {
   std::string name;
   // one of these framers is used, according to the model
   armor::FrameFramer framer{armor::ld2450::protocol()};   // LD2450
+  armor::TrackStabiliser stabiliser;                       // the tracks of a tracker keep their identity from frame to frame
   std::unique_ptr<armor::VarFramer> var;                   // every other model
   ld2450cmd::AckParser acks;                               // the command family (LD2450, LD2410, LD2412) answers in FD FC FB FA frames
   QueueHandle_t answers = nullptr;                         // Ack structures from the reader task to whoever is running a command
@@ -129,8 +131,14 @@ void feed_ld2450(Line& line, std::uint8_t sensor_id, const std::uint8_t* buffer,
     dump_frame(sensor_id, bytes, length);
 #endif
     armor::Track tracks[armor::ld2450::kTargetsPerFrame];
-    const std::size_t count = armor::ld2450::to_tracks(sensor_id, frame, tracks);
+    std::size_t count = armor::ld2450::to_tracks(sensor_id, frame, tracks);
+#if CONFIG_ARMOR_TRACK_STABILISER
+    armor::Track stable[armor::kTracksPerRadar];
+    count = line.stabiliser.update(tracks, count, monotonic_ms(), stable);
+    g_tracks.update(sensor_id, stable, count, monotonic_ms());
+#else
     g_tracks.update(sensor_id, tracks, count, monotonic_ms());
+#endif
   });
 }
 
@@ -144,8 +152,14 @@ void feed_ld2461(Line& line, std::uint8_t sensor_id, const std::uint8_t* buffer,
     g_health.frame_ok(sensor_id, monotonic_ms());
     if (frame.command == ld2461::kReportCoordinates) {
       armor::Track tracks[ld2461::kMaxTargets];
-      const std::size_t count = ld2461::to_tracks(sensor_id, frame, tracks);
+      std::size_t count = ld2461::to_tracks(sensor_id, frame, tracks);
+#if CONFIG_ARMOR_TRACK_STABILISER
+      armor::Track stable[armor::kTracksPerRadar];
+      count = line.stabiliser.update(tracks, count, monotonic_ms(), stable);
+      g_tracks.update(sensor_id, stable, count, monotonic_ms());
+#else
       g_tracks.update(sensor_id, tracks, count, monotonic_ms());
+#endif
       ++line.coordinate_frames;
     } else {
       line.zones_known = ld2461::zone_occupancy(frame, line.zone_occupied);
@@ -205,12 +219,8 @@ void publish_presence_devices(std::uint64_t now) {
       if (present < 0) continue;
       const bool changed = present != line.published_present;
       if (!changed && !g_republish && now - line.published_at_ms < kPresenceRepeatMs) continue;
-      json::Writer w;
-      w.begin_object().field("triggered", present == 1);
-      if (distance >= 0) w.field("distance_cm", distance);
-      w.end_object();
       messages[count].topic = gpio::topic(g_node_id, line.name, "state");
-      messages[count].payload = w.str();
+      messages[count].payload = presence::device_payload(present == 1, distance);
       ++count;
       line.published_present = present;
       line.published_distance = distance;
@@ -456,6 +466,12 @@ void start(const config::Settings& settings, Publisher publisher) {
       case sensors::Model::kLd2461: line.var = std::make_unique<armor::VarFramer>(ld2461::protocol()); break;
       case sensors::Model::kLd2410: case sensors::Model::kLd2412: case sensors::Model::kLd2410s: line.var = std::make_unique<armor::VarFramer>(presence::report_protocol()); break;
       case sensors::Model::kMr24hpc1: line.var = std::make_unique<armor::VarFramer>(presence::mr24_protocol()); break;
+    }
+    {
+      armor::StabiliserConfig stabilising;
+      if (line.model == sensors::Model::kLd2461) stabilising.gate_mm = 900;   // its positions come in steps of 0.1 m, and it may report less often
+      line.stabiliser = armor::TrackStabiliser(stabilising);
+      line.stabiliser.set_sensor(static_cast<std::uint8_t>(i + 1));
     }
     line.answers = xQueueCreate(6, sizeof(ld2450cmd::Ack));
     line.frame_answers = xQueueCreate(4, sizeof(ld2461::Frame));

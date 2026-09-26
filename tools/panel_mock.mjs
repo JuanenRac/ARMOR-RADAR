@@ -40,6 +40,7 @@ const config = {
     { gpio: 2, name: "battery", mode: "adc", invert: false, pull: "none", initial_on: false, safe: "keep", link_timeout_s: 0, pulse_ms: 0, debounce_ms: 30, period_s: 10, freq_hz: 1000, report: "battery", scale: 0.0057, offset: 0 },
   ],
   ble: { mode: "setup" },
+  web: { mode: "both" },
   ui: { language: "en" },
 };
 const live = { garden_light: { on: false, percent: 0, value: 0, has_value: false }, gate_contact: { on: true, percent: 0, value: 0, has_value: false }, battery: { on: false, percent: 0, value: 12.61, has_value: true } };
@@ -68,6 +69,7 @@ function status() {
     network: { layout: config.ap.enabled ? "ethernet+ap-bridged" : "ethernet", link_up: true, has_ip: true, ip: "192.168.0.181", netmask: "255.255.255.0", gateway: "192.168.0.1", dns: "192.168.0.1", mac: "34:85:18:a1:b2:c3", ethernet_ok: true,
       ap_active: config.ap.enabled, ap_setup: users.size === 0, ap_bridged: config.ap.bridge, ap_ssid: users.size === 0 ? "ARMOR-SETUP-A1B2C3" : config.ap.ssid, ap_channel: 6, ap_clients: 2, sta_connected: false, sta_ssid: "", sta_rssi: 0 },
     mqtt: { enabled: config.mqtt.enabled, connected: true, clock_set: true, published: 4120 + Math.floor((Date.now() - started) / 200), withheld: "" },
+    web: { mode: config.web.mode, https: config.web.mode !== "http", cert_sha256: "a3f1c07d9e2b4c58a7106f3de9b2c4815d6e7f80a1b2c3d4e5f60718293a4b5c" },
     lux: 312.4,
     radars: config.radars.map((r, i) => ({
       radar: i + 1, enabled: r.enabled, model: r.model, tracker: r.model === "ld2450" || r.model === "ld2461", name: r.name, rx: r.rx, tx: r.tx,

@@ -20,6 +20,9 @@
 #include <cstddef>
 #include <cstdint>
 
+#include <string>
+
+#include "json.hpp"
 #include "var_framer.hpp"
 
 namespace armor::presence {
@@ -54,6 +57,18 @@ inline VarFrameSpec mr24_protocol() {
   spec.footer_length = 2;
   spec.max_frame = 2 + 1 + 1 + 2 + 40 + 1 + 2;
   return spec;
+}
+
+// ---- what a presence sensor tells the server ------------------------------------------------------------------------------------
+
+// The state of a presence sensor as a device of the server ({"triggered":true,"distance_cm":240}): the canonical field `triggered`, and the distance
+// in centimetres when the sensor gives one (negative: none). The server keeps the canonical fields and ignores the rest.
+inline std::string device_payload(bool present, int distance_cm) {
+  json::Writer w;
+  w.begin_object().field("triggered", present);
+  if (distance_cm >= 0) w.field("distance_cm", distance_cm);
+  w.end_object();
+  return w.str();
 }
 
 // ---- readings --------------------------------------------------------------------------------------------------------------------

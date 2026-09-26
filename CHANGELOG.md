@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## [0.2.6] - HTTPS for the panel, and stable identities for the tracks
+
+- **The panel over HTTPS.** *Network > Panel security*: HTTP and HTTPS (the default), HTTPS only (port 80 sends the browser to HTTPS), or HTTP only. The node makes its own certificate the first time (an ECDSA P-256 key and a self-signed certificate for its id, kept in flash and erased by a factory reset), so the password and the session cookie no longer travel in clear on the network; the cookie is marked Secure over HTTPS. The panel shows the certificate's SHA-256 fingerprint to compare with the browser's warning. If the certificate cannot be made, the node stays on plain HTTP rather than lose its panel.
+- **A track keeps its identity.** A radar's slot number is not an identity, and the server counts and times targets by track id, so a lost frame could hand one person's id to another. The node now matches each frame's targets to the ones it was following (nearest first, inside a gate that grows while a target is missed), smooths the position a little, keeps a lost target for a few frames and still reports it for the first two, and gives a new one the next id (1 to 255, never 0). It applies to the LD2450 and the LD2461 and can be turned off in the build configuration for bench comparisons.
+- **The states the firmware publishes for devices are now checked against the server**: `tests/emit_samples` writes them (presence and distance, pins), the shared fixture holds them, and ARMOR-SERVER's tests run them through its device layer.
+- Tests: 167 + 494 + 136 checks; the panel exercised in a browser with the new card. Nothing has run on a board: the TLS handshake, its memory use next to Bluetooth and the certificate warning in real browsers are untried.
+
 ## [0.2.5] - Six sensor models on the three ports
 
 - **A port carries one of six sensors**, chosen in the panel (or `radars[].model` in the settings), each at its own serial speed (or one set): the **HLK-LD2450** as before, the **HLK-LD2461** (a tracker with five tracks, decoded from its protocol document, whose report format the node sets to coordinates when the TX wire is connected because the factory default sends zones only), and four **presence sensors**, the **LD2410B/C**, **LD2412**, **LD2410S** and **Seeed MR24HPC1**. `docs/SENSORS.md` says what each one is, what was decoded, and what the documents leave open.

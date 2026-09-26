@@ -17,7 +17,7 @@
 
 ---
 
-**Honesty check - what runs today:** **Maturity: scaffolding.** The hardware-independent core (748 checks: the decoders of the LD2450, the LD2461 and four presence sensors, the LD2450 command channel, the settings and their checks, the pin table, users and sessions, the mapped-pin logic, the network plan and the message serialiser, whose output ARMOR-COMMON accepts) is tested on a computer, the **web panel** was exercised in a real browser against a stand-in node, and the **firmware image builds** in the ESP-IDF 5.4.2 container. **It has never run on a board**: no frame has been captured from a real module, the Ethernet, Wi-Fi bridge, light-sensor and update code are untried, the radar command channel is unchecked against the manufacturer's document and against a module, the panel is plain HTTP, and the LD2461 and presence-sensor decoders match only the worked examples of their manuals, with no module behind them.
+**Honesty check - what runs today:** **Maturity: scaffolding.** The hardware-independent core (797 checks: the decoders of the LD2450, the LD2461 and four presence sensors, the LD2450 command channel, the settings and their checks, the pin table, users and sessions, the mapped-pin logic, the network plan and the message serialiser, whose output ARMOR-COMMON accepts) is tested on a computer, the **web panel** was exercised in a real browser against a stand-in node, and the **firmware image builds** in the ESP-IDF 5.4.2 container. **It has never run on a board**: no frame has been captured from a real module, the Ethernet, Wi-Fi bridge, light-sensor and update code are untried, the radar command channel is unchecked against the manufacturer's document and against a module, the panel's HTTPS certificate is made by the node itself and untried in a real browser, and the LD2461 and presence-sensor decoders match only the worked examples of their manuals, with no module behind them.
 
 ---
 
@@ -28,6 +28,7 @@
 * **One Wi-Fi from many nodes:** each node can offer an access point joined to its Ethernet port; give the nodes the same name and password and the channel on automatic (1, 6 or 11 by MAC) and phones and Wi-Fi sensors see one network with one DHCP server. It is not a radio mesh: every node keeps its cable. A node can instead join a router's Wi-Fi (with a search for networks), and one with no cable can be configured over **Bluetooth** from the Android app.
 * **Pins for the server:** any free pin becomes an input, an output (with a safe state when the broker is lost), PWM or an analogue reading, and appears as a device of the server, so a relay or a contact needs no new firmware. The board's reserved pins are never offered.
 * **Over-the-air updates with rollback** from the panel (two slots on the 16 MB flash), and a **link from Studio** to each node's panel, from the address the node publishes.
+* **The panel over HTTPS:** the node makes its own certificate (self-signed, kept in flash) and serves the panel on port 443 as well as 80, or only on 443; the session cookie is marked Secure and the certificate fingerprint is shown to compare with the browser's warning. **Stable track identities:** each frame's targets are matched to the ones followed before, so a person keeps the same track id, a lost frame does not flicker and positions are smoothed a little.
 * **Six sensor models, one per port:** a port carries an LD2450 or an LD2461 (trackers that feed the perimeter, with the model's own field in Studio) or a presence sensor (LD2410, LD2412, LD2410S, MR24HPC1) that becomes a device of the server and publishes presence and distance. Chosen in the panel; what each one is, its protocol and what was not verified are in `docs/SENSORS.md`.
 * **LD2450 decoder, health and configuration:** a resynchronising framer finds frames in a noisy stream; each 30-byte frame gives up to three targets that become contract tracks; the console and the panel say per radar whether it reports, is silent or garbled. The panel can also read the module's version, choose one or three targets and set detection zones (a protocol that is unchecked against a module).
 * **Ambient light and contract-exact messages:** the VEML7700 with automatic range; telemetry, health and information JSON that follow the published schemas and refuse to write anything invalid, with wall-clock timestamps (SNTP) and an MQTT last will. Telemetry is withheld while no radar reports, never an empty 'all clear'.
@@ -39,7 +40,7 @@
 
 ```bash
 cmake -S tests -B build/host && cmake --build build/host
-build/host/test_core && build/host/test_node && build/host/test_sensors   # 748 checks, -Werror
+build/host/test_core && build/host/test_node && build/host/test_sensors   # 797 checks, -Werror
 build/host/emit_samples | python tests/check_contract.py
 node tools/panel_mock.mjs --user admin:adminpass123   # the panel without a board
 python tools/make_fleet.py                             # once: the fleet secret and the shared settings
