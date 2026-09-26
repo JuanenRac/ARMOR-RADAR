@@ -127,7 +127,7 @@ inline std::string report_of(const MappedPin& pin) { return pin.report.empty() ?
 struct Settings {
   std::string node_id;
   std::string node_name;
-  Uplink uplink = Uplink::kEthernet;
+  Uplink uplink = board::kHasEthernet ? Uplink::kEthernet : Uplink::kWifi;   // the board's own way in until the panel says otherwise
   IpSettings ip;
   AccessPoint ap;
   Station sta;
@@ -396,6 +396,7 @@ inline Problems validate(const Settings& s) {
   if (!language_is_known(s.language)) bad(problems, "ui.language", "invalid");
 
   // network
+  if (s.uplink == Uplink::kEthernet && !board::kHasEthernet) bad(problems, "uplink", "not_available");   // this board has no cable
   if (s.uplink == Uplink::kEthernet && !s.ip.dhcp) {
     std::uint32_t address = 0, mask = 0, gateway = 0, dns = 0;
     const bool address_ok = net::parse_ipv4(s.ip.address, address), mask_ok = net::parse_ipv4(s.ip.netmask, mask) && net::valid_netmask(mask);

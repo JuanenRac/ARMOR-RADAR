@@ -1,7 +1,7 @@
 // ARMOR-RADAR - decides how the node's network is built from its settings: which interfaces, which are bridged, and the access point.
 // Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
 //
-// The five layouts:
+// The five layouts (a board with no Ethernet port, the s3-wifi profile, only ever has the last two):
 //   kEthernet             wired only; the node's address is the Ethernet one (DHCP or fixed)
 //   kEthernetBridgedAp    wired, and an access point joined to the wired network: the phones and sensors that connect get addresses from
 //                         the same DHCP server as everything else, and keep them when they move to another node with the same SSID
@@ -58,7 +58,7 @@ inline std::string upper(std::string_view text) {
 inline Plan plan_network(const config::Settings& s, bool setup_mode, std::string_view setup_code, std::string_view mac_tail, unsigned mac_sum) {
   Plan plan;
   plan.hostname = hostname_for(s);
-  const bool wired = s.uplink == config::Uplink::kEthernet;
+  const bool wired = board::kHasEthernet && s.uplink == config::Uplink::kEthernet;   // a board with no cable is on Wi-Fi whatever the settings say
   AccessPointPlan& ap = plan.ap;
   if (setup_mode) {
     ap.enabled = true;

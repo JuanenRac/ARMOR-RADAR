@@ -239,7 +239,8 @@ esp_err_t get_session(httpd_req_t* r) {
   const network::Status n = network::status();
   json::Writer w;
   w.begin_object().field("setup", store::users_empty()).field("authenticated", who.ok).field("user", who.ok ? who.user : "").field("role", who.ok ? auth::to_text(who.role) : "")
-      .field("node_id", s.node_id).field("language", s.language).field("version", version_text()).field("setup_ssid", n.ap_setup ? n.ap_ssid : "").field("mac", n.mac).end_object();
+      .field("node_id", s.node_id).field("language", s.language).field("version", version_text()).field("setup_ssid", n.ap_setup ? n.ap_ssid : "").field("mac", n.mac)
+      .field("board", board::kId).field("ethernet", board::kHasEthernet).end_object();
   return send_json(r, 200, w.str());
 }
 
@@ -252,19 +253,43 @@ esp_err_t post_setup(httpd_req_t* r) {
     std::lock_guard<std::mutex> guard(g_lock);
     if (!g_throttle.allowed(source, now_ms())) return send_error(r, 429, "too_many_attempts");
   }
-  if (!auth::same_text(in.string_or("code", ""), store::setup_code())) {
+  const std::string code = in.string_or("code", "");
+  if (!auth::same_text(code, store::setup_code())) {
     std::lock_guard<std::mutex> guard(g_lock);
     g_throttle.failure(source, now_ms());
     return send_error(r, 403, "wrong_code");
   }
   const std::string user = in.string_or("user", ""), password = in.string_or("password", "");
+  config::Settings s = store::settings();
+  bool changed = false;
+  if (!board::kHasEthernet) {
+    // A board with no cable needs a way in for after the setup: the Wi-Fi network it is to join, and its own network (named after the board and keyed with the
+    // setup code the administrator has just used; it can be changed in the panel) so it can always be reached. Nothing is created if this is refused.
+    const std::string wifi_ssid = in.string_or("wifi_ssid", ""), wifi_password = in.string_or("wifi_password", "");
+    if (wifi_ssid.empty()) return send_error(r, 422, "wifi_required");
+    s.uplink = config::Uplink::kWifi;
+    s.sta.enabled = true; s.sta.ssid = wifi_ssid; s.sta.password = wifi_password;
+    if (!s.ap.enabled) {
+      s.ap.enabled = true;
+      s.ap.ssid = "ARMOR-" + netplan::upper(store::mac_tail());
+      s.ap.security = config::WifiSecurity::kWpa2;
+      s.ap.password = code;
+    }
+    const config::Problems problems = config::validate(s);
+    if (!problems.empty()) {
+      json::Writer w;
+      w.begin_object().field("error", "invalid").key("problems").raw(api::problems_json(problems)).end_object();
+      return send_json(r, 422, w.str());
+    }
+    changed = true;
+  }
   const auth::Result result = store::user_add(user, password, auth::Role::kAdmin);
   if (result == auth::Result::kInvalidName) return send_error(r, 422, "invalid_name");
   if (result == auth::Result::kWeakPassword) return send_error(r, 422, "weak_password");
   if (result != auth::Result::kOk) return send_error(r, 500, "storage");
-  config::Settings s = store::settings();
   const std::string language = in.string_or("language", "");
-  if (config::language_is_known(language) && language != s.language) { s.language = language; store::save_settings(s); }
+  if (config::language_is_known(language) && language != s.language) { s.language = language; changed = true; }
+  if (changed) store::save_settings(s);
   else if (!store::settings_are_stored()) store::save_settings(s);   // keep the first settings from now on
   {
     std::lock_guard<std::mutex> guard(g_lock);

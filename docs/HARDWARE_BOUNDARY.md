@@ -13,7 +13,18 @@ Run `build-test` from ARMOR-COMMON's launcher (or the commands in the README) fo
 firmware image was **not** built; `tools/build_node.sh` builds it in the container. The first day on a board is
 [BENCH_BRINGUP.md](BENCH_BRINGUP.md); the panel is described in [NODE_PANEL.md](NODE_PANEL.md).
 
-## The board
+## The two boards
+
+The firmware is built for two boards, chosen when the image is built (`tools/build_node.sh NODE BOARD`, `dist/NODE-BOARD.bin`; the host tests build both profiles). **An image is for ONE board.**
+
+| Profile | Board | Way in | Pins |
+| --- | --- | --- | --- |
+| `s3-eth` (the default) | Waveshare ESP32-S3-ETH | The cable (DHCP or fixed), the Wi-Fi access point (bridged or on its own), or Wi-Fi | GPIO 9 to 14 (W5500) and 8 (camera) reserved, 4 to 7 the microSD socket |
+| `s3-wifi` | ESP32-S3-WROOM-1 N16R8 (16 MB flash, 8 MB octal PSRAM, two USB-C sockets), no Ethernet | Wi-Fi only: a station, plus the node's own network | GPIO 4 to 14 free; 43, 44 (the USB-serial socket) and 48 (the RGB LED) with a warning |
+
+The `s3-wifi` image has no W5500 driver and no bridge, and the panel hides what the board does not have. The three radars, the light sensor and the mapped pins use the same default pins on both boards. **Nothing about the `s3-wifi` board has been tried.**
+
+## The Waveshare board
 
 The target is the **Waveshare ESP32-S3-ETH**: ESP32-S3R8 (dual core, 240 MHz, **8 MB of octal PSRAM**), a **16 MB** flash, the W5500 Ethernet
 (RJ45, 10/100), a USB-C port (native USB: the log and the flashing), a microSD socket, a camera connector, a ceramic antenna (an IPEX

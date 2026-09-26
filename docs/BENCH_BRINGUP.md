@@ -43,7 +43,8 @@ its own flash and is set in its panel or with `tools/adopt_node.py`. There is no
 Once, on the computer that builds:
 
     python tools/make_fleet.py           # secrets/fleet.secret, secrets/generic.conf, secrets/fleet.json (git-ignored; edit fleet.json)
-    tools/build_node.sh generic          # dist/generic.bin, the same file for every board (from WSL, in the ESP-IDF container)
+    tools/build_node.sh generic          # dist/generic-s3-eth.bin, the same file for every Waveshare ESP32-S3-ETH (from WSL, in the ESP-IDF container)
+    tools/build_node.sh generic s3-wifi  # dist/generic-s3-wifi.bin, for an ESP32-S3-WROOM-1 N16R8 with no Ethernet (see "A board with no Ethernet")
 
 `fleet.json` holds what every node shares (the Wi-Fi name and password, the broker address, the language). `fleet.secret` is what turns a board's
 MAC into its **set-up code** (HMAC-SHA256, ten symbols), so a board can be adopted over the network with no cable. Without the secret the code is
@@ -57,7 +58,7 @@ cannot be used for the first program, because a blank chip has no network code y
 Ethernet from its panel (*Firmware and log*).
 
 1. Plug the board to the PC with USB-C. A COM port appears (see it in the Device Manager).
-2. `tools\flash.bat generic COM5 monitor` (use your port). It creates its own Python environment with `esptool` the first time. If the board does
+2. `tools\flash.bat generic COM5 monitor` (use your port; add `s3-wifi` for the board with no Ethernet: the image is for ONE board). It creates its own Python environment with `esptool` the first time. If the board does
    not answer, hold **BOOT**, press and release **RESET**, release BOOT, and run it again. Add `erase` to wipe the flash first.
 3. Press RESET. The console prints `A.R.M.O.R. node armor-xxxxxx ... NOT SET UP YET`, and its MAC.
 4. Unplug USB, connect the Ethernet cable (PoE from the switch powers it) and put the board where it will work. Do not connect USB and PoE at the same
@@ -75,6 +76,13 @@ before the pins and the panel link existed need `sudo mqtt_identity.sh upgrade-n
 
 The alternative, an image per node with its identity already inside (`tools/provision_node.sh <id> ...` then `tools/build_node.sh <id>`), still works and
 is what the first two boards were built with; it is not needed any more.
+
+### A board with no Ethernet (the `s3-wifi` image)
+
+The same steps with `s3-wifi`, except that there is no cable to adopt the node through: after the first program the node opens its set-up Wi-Fi `ARMOR-SETUP-xxxxxx` (password: the setup code from the console, or derived from the fleet secret and
+the MAC). Join it, open `http://192.168.4.1/`, enter the code, choose the administrator and **give the Wi-Fi network the node is to join** (the set-up refuses to finish without it); the node also keeps its own network `ARMOR-xxxxxx`
+(the setup code as its password) so it can always be reached. From a phone, the Android app can do the same over Bluetooth (*Configurar un nodo*). Adopting it from the computer with `tools/adopt_node.py` works once the node is on
+your network (it needs its address). Nothing about this board has been tried.
 
 ## 4. First start: the panel
 

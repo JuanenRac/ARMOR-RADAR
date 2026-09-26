@@ -38,7 +38,7 @@ const char* reset_reason_text() {
 
 void write_network(json::Writer& w) {
   const network::Status n = network::status();
-  w.key("network").begin_object().field("layout", n.layout).field("link_up", n.link_up).field("has_ip", n.has_ip).field("ip", n.ip).field("netmask", n.netmask).field("gateway", n.gateway)
+  w.key("network").begin_object().field("board", n.board).field("ethernet_available", n.ethernet_available).field("layout", n.layout).field("link_up", n.link_up).field("has_ip", n.has_ip).field("ip", n.ip).field("netmask", n.netmask).field("gateway", n.gateway)
       .field("dns", n.dns).field("mac", n.mac).field("ethernet_ok", n.ethernet_ok).field("ap_active", n.ap_active).field("ap_setup", n.ap_setup).field("ap_bridged", n.ap_bridged)
       .field("ap_ssid", n.ap_ssid).field("ap_channel", n.ap_channel).field("ap_clients", n.ap_clients).field("sta_connected", n.sta_connected).field("sta_ssid", n.sta_ssid)
       .field("sta_rssi", n.sta_rssi).end_object();

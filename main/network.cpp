@@ -1,6 +1,7 @@
 // ARMOR-RADAR - the node's network: Ethernet, the Wi-Fi access point (bridged to the wire or on its own) and the Wi-Fi station.
 // Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
 //
+// The Ethernet parts exist only in the s3-eth image (the s3-wifi board has no port, and its image has no W5500 driver).
 // Nothing here has run on a board. The bridged layout follows ESP-IDF's own "bridge" example (network/bridge): the Ethernet port and the
 // access point are two ports of one lwIP bridge, and the bridge carries the node's address.
 #include "network.hpp"
@@ -14,12 +15,16 @@ extern "C" {
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_netif.h"
+#if !defined(ARMOR_BOARD_S3_WIFI)
 #include "esp_netif_br_glue.h"
+#endif
 #include "esp_timer.h"
 #include "esp_wifi.h"
 #include "sdkconfig.h"
 }
+#if !defined(ARMOR_BOARD_S3_WIFI)
 #include "board_ethernet.hpp"
+#endif
 #include "core/net_text.hpp"
 
 namespace armor::network {
@@ -31,7 +36,9 @@ Status g_status;
 netplan::Plan g_plan;
 config::Settings g_settings;
 esp_netif_t* g_ip_netif = nullptr;   // the interface that holds the node's address
+#if !defined(ARMOR_BOARD_S3_WIFI)
 esp_eth_handle_t g_eth = nullptr;
+#endif
 esp_timer_handle_t g_reconnect_timer = nullptr;
 bool g_wifi_running = false;   // the driver was started by start() (an access point, a station, or both)
 std::mutex g_scan_lock;
@@ -79,6 +86,7 @@ void on_ip_lost(void*, esp_event_base_t, int32_t, void*) {
   g_status.ip.clear();
 }
 
+#if !defined(ARMOR_BOARD_S3_WIFI)
 void on_eth_event(void*, esp_event_base_t, int32_t event_id, void*) {
   switch (event_id) {
     case ETHERNET_EVENT_CONNECTED: {
@@ -102,6 +110,7 @@ void on_eth_event(void*, esp_event_base_t, int32_t event_id, void*) {
     default: break;
   }
 }
+#endif
 
 void reconnect_station(void*) { esp_wifi_connect(); }
 
@@ -230,27 +239,33 @@ bool start(const config::Settings& s, const netplan::Plan& plan) {
   g_status.ap_active = plan.ap.enabled;
   g_status.ap_setup = plan.ap.setup;
   g_status.ap_bridged = plan.ap.bridged;
+  g_status.ethernet_available = board::kHasEthernet;
+  g_status.board = board::kId;
   g_status.ap_ssid = plan.ap.ssid;
   g_status.ap_channel = plan.ap.enabled ? plan.ap.channel : 0;
   std::uint8_t mac[6]{};
-  esp_read_mac(mac, ESP_MAC_ETH);
+  esp_read_mac(mac, board::kHasEthernet ? ESP_MAC_ETH : ESP_MAC_WIFI_STA);
   g_status.mac = mac_text(mac);
 
   ESP_ERROR_CHECK(esp_netif_init());
-  ESP_ERROR_CHECK(esp_event_handler_register(ETH_EVENT, ESP_EVENT_ANY_ID, &on_eth_event, nullptr));
   ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &on_wifi_event, nullptr));
-  ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_GOT_IP, &on_ip_event, nullptr));
   ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &on_ip_event, nullptr));
-  ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_LOST_IP, &on_ip_lost, nullptr));
   ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_LOST_IP, &on_ip_lost, nullptr));
+#if !defined(ARMOR_BOARD_S3_WIFI)
+  ESP_ERROR_CHECK(esp_event_handler_register(ETH_EVENT, ESP_EVENT_ANY_ID, &on_eth_event, nullptr));
+  ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_GOT_IP, &on_ip_event, nullptr));
+  ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_LOST_IP, &on_ip_lost, nullptr));
+#endif
 
   const bool wired = plan.layout == netplan::Layout::kEthernet || plan.layout == netplan::Layout::kEthernetBridgedAp || plan.layout == netplan::Layout::kEthernetWithAp;
   const bool station = !wired;
 
+#if !defined(ARMOR_BOARD_S3_WIFI)
   if (wired) {
     g_eth = ethernet_driver_create();
     if (g_eth == nullptr) { g_status.ethernet_ok = false; if (!plan.ap.enabled) return false; }
   }
+#endif
 
   if (station) {
     esp_timer_create_args_t timer{};
@@ -259,6 +274,7 @@ bool start(const config::Settings& s, const netplan::Plan& plan) {
     esp_timer_create(&timer, &g_reconnect_timer);
   }
 
+#if !defined(ARMOR_BOARD_S3_WIFI)
   esp_netif_t* eth_netif = nullptr;
   if (plan.layout == netplan::Layout::kEthernetBridgedAp) {
     // ---- one bridge: the wire and the access point are its ports, and the bridge carries the node's address ----
@@ -306,6 +322,7 @@ bool start(const config::Settings& s, const netplan::Plan& plan) {
     g_ip_netif = eth_netif;
     apply_ip(eth_netif, s, plan.hostname);
   }
+#endif
   if (plan.ap.enabled || station) {
     if (plan.ap.enabled) esp_netif_create_default_wifi_ap();
     if (station) {
@@ -315,7 +332,9 @@ bool start(const config::Settings& s, const netplan::Plan& plan) {
     }
     if (!wifi_setup(s, plan, station)) return false;
   }
+#if !defined(ARMOR_BOARD_S3_WIFI)
   if (g_eth != nullptr) ESP_ERROR_CHECK(esp_eth_start(g_eth));
+#endif
   if (plan.ap.enabled || station) { ESP_ERROR_CHECK(esp_wifi_start()); wifi_tune(plan); g_wifi_running = true; }
   return true;
 }

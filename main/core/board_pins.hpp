@@ -1,7 +1,15 @@
-// ARMOR-RADAR - which GPIO pins of the Waveshare ESP32-S3-ETH may be handed to the operator, and why the others may not.
+// ARMOR-RADAR - the two boards this firmware is built for, and which of their GPIO pins may be handed to the operator.
 // Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
 //
-// The board carries an ESP32-S3R8 (8 MB of octal PSRAM inside the chip) and 16 MB of external flash. The table below comes from the
+// One firmware, two board profiles (chosen when the image is built, tools/build_node.sh NODE BOARD; the host tests build both):
+//
+//   s3-eth    the Waveshare ESP32-S3-ETH (the default): a W5500 Ethernet controller on SPI (RJ45, PoE through a separate module), a microSD socket and a camera
+//             connector. The rest of this comment describes it.
+//   s3-wifi   an ESP32-S3-DevKitC-1 style ESP32-S3-WROOM-1 N16R8 (16 MB flash, 8 MB octal PSRAM), two USB-C sockets, NO Ethernet: Wi-Fi is the only way in. GPIO 8 to 14
+//             and 4 to 7 are free header pins there; GPIO 43 and 44 (the CH343P of the "USB to serial" socket) and 48 (the RGB LED) come with a warning.
+//             The pins the three radars, the light sensor and the mapped pins use by default are free on both boards.
+//
+// The Waveshare board carries an ESP32-S3R8 (8 MB of octal PSRAM inside the chip) and 16 MB of external flash. The table below comes from the
 // manufacturer's pin map and the chip's datasheet; a pin that is uncertain is reserved rather than offered:
 //   - GPIO 22..25 do not exist, and 26..32 are the external flash;
 //   - GPIO 33..37 belong to the octal PSRAM (the datasheet is only certain for 35..37; 33 and 34 are kept out too);
@@ -18,6 +26,16 @@
 #include <cstdint>
 
 namespace armor::board {
+
+#if defined(ARMOR_BOARD_S3_WIFI)
+constexpr bool kHasEthernet = false;
+constexpr const char* kId = "s3-wifi";
+constexpr const char* kName = "ESP32-S3-WROOM-1 N16R8";
+#else
+constexpr bool kHasEthernet = true;
+constexpr const char* kId = "s3-eth";
+constexpr const char* kName = "Waveshare ESP32-S3-ETH";
+#endif
 
 enum class PinUse : std::uint8_t {
   kFree,      // no special role
@@ -44,10 +62,14 @@ constexpr PinInfo pin_info(int gpio) {
   if (gpio >= 26 && gpio <= 32) return {gpio, PinUse::kReserved, Reserved::kFlash, false, false};
   if (gpio >= 33 && gpio <= 37) return {gpio, PinUse::kReserved, Reserved::kPsram, true, false};
   if (gpio == 19 || gpio == 20) return {gpio, PinUse::kReserved, Reserved::kUsb, true, false};
+  if (gpio == 0 || gpio == 3 || gpio == 45 || gpio == 46) return {gpio, PinUse::kCaution, Reserved::kNone, true, gpio == 3};
+#if defined(ARMOR_BOARD_S3_WIFI)
+  if (gpio == 43 || gpio == 44 || gpio == 48) return {gpio, PinUse::kCaution, Reserved::kNone, true, false};   // the USB-serial socket's pair, and the RGB LED
+#else
   if (gpio >= 9 && gpio <= 14) return {gpio, PinUse::kReserved, Reserved::kEthernet, false, gpio <= 10};
   if (gpio == 8) return {gpio, PinUse::kReserved, Reserved::kCamera, false, true};
   if (gpio >= 4 && gpio <= 7) return {gpio, PinUse::kSdCard, Reserved::kNone, true, true};
-  if (gpio == 0 || gpio == 3 || gpio == 45 || gpio == 46) return {gpio, PinUse::kCaution, Reserved::kNone, true, gpio == 3};
+#endif
   return {gpio, PinUse::kFree, Reserved::kNone, true, gpio >= 1 && gpio <= 10};
 }
 

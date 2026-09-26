@@ -93,7 +93,7 @@ bench is *Read information*: an answer with a version such as `1.02.22062416` co
 
 ## Updating the firmware
 
-*Firmware and log → Update* takes the `.bin` of this project (`build/<node>/armor_radar.bin`, not the merged image in `dist/`). The node
+*Firmware and log → Update* takes the `.bin` of this project (`build/<node>-<board>/armor_radar.bin`, for example `build/generic-s3-eth/armor_radar.bin`; not the merged image in `dist/`). The node
 checks the image (its own hash and its project name) before it changes the boot partition, restarts into the new version, and the boot loader
 goes back to the previous version by itself if the new one does not bring its panel up and stay up for thirty seconds. The flash holds
 two application slots (`partitions.csv`). The first flash of a board is still USB (`tools\flash.bat`).

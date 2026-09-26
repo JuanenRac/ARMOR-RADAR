@@ -25,12 +25,13 @@
 
 ---
 
-**正直さのチェック - 今日動いているもの:** **成熟度：scaffolding。** ハードウェア非依存のコア（797 件のチェック：LD2450、LD2461、4 種の人感センサーのデコーダー、LD2450 のコマンドチャネル、設定とその検証、ピン表、ユーザーとセッション、割り当てピンのロジック、ネットワーク計画、そして ARMOR-COMMON が受け入れる出力を持つメッセージシリアライザー）はコンピューターでテスト済みで、**Web パネル**は代役ノードに対して実際のブラウザーで試し、**ファームウェアイメージ**は ESP-IDF 5.4.2 コンテナーでビルドできます。**ボード上で動いたことはありません**：実モジュールからフレームを取得したことはなく、イーサネット、Wi-Fi ブリッジ、光センサー、更新のコードは未試験で、レーダーのコマンドチャネルはメーカー文書とも実モジュールとも照合しておらず、パネルの HTTPS 証明書はノード自身が作るため実ブラウザーでは未試験で、LD2461 と人感センサーのデコーダーは各マニュアルの例としか一致せず、実モジュールはありません。
+**正直さのチェック - 今日動いているもの:** **成熟度：scaffolding。** ハードウェア非依存のコア（859 件のチェック：LD2450、LD2461、4 種の人感センサーのデコーダー、LD2450 のコマンドチャネル、設定とその検証、ピン表、ユーザーとセッション、割り当てピンのロジック、ネットワーク計画、そして ARMOR-COMMON が受け入れる出力を持つメッセージシリアライザー）はコンピューターでテスト済みで、**Web パネル**は代役ノードに対して実際のブラウザーで試し、**ファームウェアイメージ**は ESP-IDF 5.4.2 コンテナーでビルドできます。**ボード上で動いたことはありません**：実モジュールからフレームを取得したことはなく、イーサネット、Wi-Fi ブリッジ、光センサー、更新のコードは未試験で、レーダーのコマンドチャネルはメーカー文書とも実モジュールとも照合しておらず、パネルの HTTPS 証明書はノード自身が作るため実ブラウザーでは未試験で、LD2461 と人感センサーのデコーダーは各マニュアルの例としか一致せず、実モジュールはありません。
 
 ---
 
 ## 🎯 概要
 
+* **2 種類のボード、1 つのファームウェア：** Waveshare ESP32-S3-ETH（Ethernet、標準）と、Ethernet のない ESP32-S3-WROOM-1 N16R8（Wi-Fi のみ：セットアップで参加する Wi-Fi ネットワークを尋ね、ノードは常に独自のネットワークも保ちます）。イメージはビルド時に選びます（`tools/build_node.sh generic s3-eth` または `generic s3-wifi`）。ピン表とアクセス方法はボードに従い、パネルはボードにないものを隠し、イメージは対応するボード専用です。どちらもビルドでき、コンピューター上でテスト済みですが、実機では動かしていません。
 * **270 度のノードが 2 つ：** 各 Waveshare ESP32-S3-ETH は 3 本の UART で最大 3 基の LD2450 レーダーを読み取ります。レーダーは 75 度ずつずらして取り付け、有線イーサネット（W5500）で DHCP または固定アドレス、給電は PoE か USB です。Studio の *Add a 270° node* は、ノードに割り当て済みの 3 基のレーダーを作成します。
 * **すべてのノードに Web パネル：** Studio と同じ見た目で 7 言語に対応し、ファームウェアに組み込まれています。概要、ネットワーク、Wi-Fi、ブローカー、レーダー、ピン、ユーザー、ファームウェア更新、ログ。ユーザーのいないノードは Wi-Fi `ARMOR-SETUP-xxxxxx` を開き、セットアップコードで最初の管理者を作成します。パスワードはソルト付き PBKDF2、セッションはランダムなトークン、すべての設定はノードのフラッシュにあるので、1 つのイメージがすべてのノードに使え、パスワードはコンパイルされません（[パネル](docs/NODE_PANEL.md)）。
 * **複数のノードで 1 つの Wi-Fi：** 各ノードはイーサネットポートにつながるアクセスポイントを提供できます。同じ名前とパスワードにしてチャネルを自動（MAC により 1、6、11）にすると、スマートフォンと Wi-Fi センサーには 1 つの DHCP サーバーを持つ 1 つのネットワークに見えます。無線メッシュではなく、各ノードはケーブルを保ちます。代わりにルーターの Wi-Fi に参加でき（ネットワーク検索付き）、ケーブルのないノードは Android アプリから **Bluetooth** で設定できます。
@@ -69,15 +70,16 @@ ARMOR-RADAR/
 
 ```bash
 cmake -S tests -B build/host && cmake --build build/host
-build/host/test_core && build/host/test_node && build/host/test_sensors   # 797 checks, -Werror
+build/host/test_core && build/host/test_node && build/host/test_sensors && build/host/test_board_wifi   # 859 checks, -Werror
 build/host/emit_samples | python tests/check_contract.py
 node tools/panel_mock.mjs --user admin:adminpass123   # the panel without a board
 python tools/make_fleet.py                             # once: the fleet secret and the shared settings
-tools/build_node.sh generic                           # ONE image for every board, in the ESP-IDF container
+tools/build_node.sh generic                           # ONE image for every Waveshare board (dist/generic-s3-eth.bin), in the ESP-IDF container
+tools/build_node.sh generic s3-wifi                   # the same firmware for an ESP32-S3-WROOM-1 N16R8 with no Ethernet
 ```
 
 ```bat
-tools\flash.bat generic COM5 monitor                  # each board, once, by USB-C
+tools\flash.bat generic COM5 monitor                  # each Waveshare board, once, by USB-C (add s3-wifi for the other board)
 ```
 
 ```bash

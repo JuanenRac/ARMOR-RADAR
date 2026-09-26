@@ -24,6 +24,8 @@ struct Status {
   std::string sta_ssid;
   int sta_rssi = 0;
   bool ethernet_ok = true;            // false: the W5500 did not answer
+  bool ethernet_available = false;    // this board has an Ethernet port (the s3-eth profile)
+  std::string board;                  // "s3-eth" or "s3-wifi"
 };
 
 // Builds the network from the settings and starts it. Returns false only when nothing at all could be started; the node then keeps its

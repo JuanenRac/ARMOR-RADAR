@@ -2,19 +2,15 @@
 #
 # The three radars need all three UARTs, and UART0 is the default console. Move the
 # console to the native USB Serial/JTAG peripheral so UART0 is free for a radar. On the
-# Waveshare ESP32-S3-ETH the USB-C connector is the native USB port, so the serial log
-# comes out of the same cable used to flash it.
+# Waveshare ESP32-S3-ETH the USB-C connector is the native USB port, and on the ESP32-S3-WROOM-1
+# N16R8 board its "USB & OTG" socket is: the serial log comes out of the same cable used to flash it.
 CONFIG_IDF_TARGET="esp32s3"
 CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
 # Show the node's own log lines at the default level; the drivers stay quiet unless they warn.
 CONFIG_LOG_DEFAULT_LEVEL_INFO=y
 # A wired node that stops answering must recover by itself: the task watchdog resets a stuck task.
 CONFIG_ESP_TASK_WDT_EN=y
-# The W5500 Ethernet controller of the board (SPI), and nothing else of the Ethernet drivers.
-CONFIG_ETH_USE_SPI_ETHERNET=y
-CONFIG_ETH_SPI_ETHERNET_W5500=y
-CONFIG_ETH_SPI_ETHERNET_DM9051=n
-CONFIG_ETH_SPI_ETHERNET_KSZ8851SNL=n
+# The board-specific options (the W5500 Ethernet controller, the bridge) are in sdkconfig.board.s3-eth; tools/build_node.sh adds the one of the board.
 
 # The board has 16 MB of flash: two application slots for over-the-air updates (partitions.csv), and the boot loader goes back to the
 # previous image when a new one does not confirm itself.
@@ -31,9 +27,6 @@ CONFIG_SPIRAM_SPEED_80M=y
 CONFIG_SPIRAM_IGNORE_NOTFOUND=y
 CONFIG_SPIRAM_USE_MALLOC=y
 
-# The Wi-Fi access point can be bridged to the Ethernet port (one network for the wired and the wireless side).
-CONFIG_ESP_NETIF_BRIDGE_EN=y
-CONFIG_LWIP_NUM_NETIF_CLIENT_DATA=1
 CONFIG_LWIP_MAX_SOCKETS=16
 # The HTTPS panel: a second server with its own certificate; the TLS buffers are released while a connection is idle.
 CONFIG_ESP_HTTPS_SERVER_ENABLE=y

@@ -25,12 +25,13 @@
 
 ---
 
-**Comprobación de honestidad - qué funciona hoy:** **Madurez: scaffolding.** El núcleo independiente del hardware (797 comprobaciones: los decodificadores del LD2450, del LD2461 y de cuatro sensores de presencia, el canal de comandos del LD2450, los ajustes y sus comprobaciones, la tabla de pines, usuarios y sesiones, la lógica de los pines asignados, el plan de red y el serializador de mensajes, cuya salida acepta ARMOR-COMMON) se prueba en el ordenador, el **panel web** se ejercitó en un navegador real contra un nodo simulado, y la **imagen del firmware compila** en el contenedor de ESP-IDF 5.4.2. **Nunca se ha ejecutado en una placa**: no se ha capturado ninguna trama de un módulo real, el código de Ethernet, del puente Wi-Fi, del sensor de luz y de actualización no se ha probado, el canal de comandos del radar no está comprobado con el documento del fabricante ni con un módulo, el certificado HTTPS del panel lo crea el propio nodo y no se ha probado en un navegador real, y los decodificadores del LD2461 y de los sensores de presencia solo coinciden con los ejemplos resueltos de sus manuales, sin ningún módulo detrás.
+**Comprobación de honestidad - qué funciona hoy:** **Madurez: scaffolding.** El núcleo independiente del hardware (859 comprobaciones: los decodificadores del LD2450, del LD2461 y de cuatro sensores de presencia, el canal de comandos del LD2450, los ajustes y sus comprobaciones, la tabla de pines, usuarios y sesiones, la lógica de los pines asignados, el plan de red y el serializador de mensajes, cuya salida acepta ARMOR-COMMON) se prueba en el ordenador, el **panel web** se ejercitó en un navegador real contra un nodo simulado, y la **imagen del firmware compila** en el contenedor de ESP-IDF 5.4.2. **Nunca se ha ejecutado en una placa**: no se ha capturado ninguna trama de un módulo real, el código de Ethernet, del puente Wi-Fi, del sensor de luz y de actualización no se ha probado, el canal de comandos del radar no está comprobado con el documento del fabricante ni con un módulo, el certificado HTTPS del panel lo crea el propio nodo y no se ha probado en un navegador real, y los decodificadores del LD2461 y de los sensores de presencia solo coinciden con los ejemplos resueltos de sus manuales, sin ningún módulo detrás.
 
 ---
 
 ## 🎯 Descripción general
 
+* **Dos placas, un firmware:** la Waveshare ESP32-S3-ETH (Ethernet, la de serie) y una ESP32-S3-WROOM-1 N16R8 sin Ethernet (solo Wi-Fi: su configuración pide la red Wi-Fi a la que unirse y siempre conserva su propia red). La imagen se elige al compilar (`tools/build_node.sh generic s3-eth` o `generic s3-wifi`); la tabla de pines y la forma de acceso siguen a la placa, el panel oculta lo que la placa no tiene y una imagen es solo para su placa. Ambas compilan y tienen tests en el ordenador; ninguna ha funcionado en una placa.
 * **Dos nodos de 270 grados:** cada Waveshare ESP32-S3-ETH lee hasta tres radares LD2450 en sus tres UART, montados con 75 grados de separación, por Ethernet cableada (W5500) con DHCP o dirección fija, alimentada por PoE o USB. *Añadir un nodo de 270°* en Studio crea los tres radares ya asignados al nodo.
 * **Un panel web en cada nodo,** con el aspecto de Studio y sus siete idiomas, integrado en el firmware: resumen, red, Wi-Fi, broker, radares, pines, usuarios, actualización del firmware y registro. Un nodo sin usuarios abre el Wi-Fi `ARMOR-SETUP-xxxxxx` y crea su primer administrador con un código de configuración; las contraseñas usan PBKDF2 con sal, las sesiones son tokens aleatorios y todos los ajustes viven en la flash del nodo, así que una imagen sirve para todos los nodos y no se compila ninguna contraseña ([el panel](docs/NODE_PANEL.md)).
 * **Un solo Wi-Fi desde muchos nodos:** cada nodo puede ofrecer un punto de acceso unido a su puerto Ethernet; dales el mismo nombre y contraseña y el canal en automático (1, 6 u 11 según la MAC) y los móviles y sensores Wi-Fi ven una red con un servidor DHCP. No es una malla por radio: cada nodo conserva su cable. Un nodo puede en cambio unirse al Wi-Fi de un router (con búsqueda de redes), y uno sin cable se puede configurar por **Bluetooth** desde la app de Android.
@@ -69,15 +70,16 @@ ARMOR-RADAR/
 
 ```bash
 cmake -S tests -B build/host && cmake --build build/host
-build/host/test_core && build/host/test_node && build/host/test_sensors   # 797 checks, -Werror
+build/host/test_core && build/host/test_node && build/host/test_sensors && build/host/test_board_wifi   # 859 checks, -Werror
 build/host/emit_samples | python tests/check_contract.py
 node tools/panel_mock.mjs --user admin:adminpass123   # the panel without a board
 python tools/make_fleet.py                             # once: the fleet secret and the shared settings
-tools/build_node.sh generic                           # ONE image for every board, in the ESP-IDF container
+tools/build_node.sh generic                           # ONE image for every Waveshare board (dist/generic-s3-eth.bin), in the ESP-IDF container
+tools/build_node.sh generic s3-wifi                   # the same firmware for an ESP32-S3-WROOM-1 N16R8 with no Ethernet
 ```
 
 ```bat
-tools\flash.bat generic COM5 monitor                  # each board, once, by USB-C
+tools\flash.bat generic COM5 monitor                  # each Waveshare board, once, by USB-C (add s3-wifi for the other board)
 ```
 
 ```bash

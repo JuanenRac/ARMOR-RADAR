@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented here.
 
+## [0.2.8] - One firmware for two boards: with Ethernet and without
+
+- **A version for the boards with no Ethernet.** The firmware is one code base with two **board profiles** chosen when the image is built: `tools/build_node.sh generic` (or `generic s3-eth`) writes `dist/generic-s3-eth.bin` for the Waveshare ESP32-S3-ETH, as before; `tools/build_node.sh generic s3-wifi` writes `dist/generic-s3-wifi.bin` for an **ESP32-S3-WROOM-1 N16R8** (16 MB flash, 8 MB octal PSRAM, two USB-C sockets) that has no Ethernet. An image is for ONE board: flash it only to that one (`tools\flash.bat NODE COMx [s3-eth|s3-wifi]` takes the board too).
+- **The `s3-wifi` profile** builds without the W5500 driver and without the bridge, starts on Wi-Fi (the way in is always a station, plus the node's own network), refuses an Ethernet setting (`not_available`), and has its own pin table: GPIO 4 to 14 are ordinary header pins (no W5500, no camera connector, no microSD socket), 43 and 44 (the USB-serial socket) and 48 (the RGB LED) come with a warning. The pins of the three radars, the light sensor and the mapped pins by default are free on both boards.
+- **Set-up without a cable:** on the `s3-wifi` board the set-up asks for the Wi-Fi network the node is to join (it is not created without it) and keeps the node's own network `ARMOR-xxxxxx`, with the setup code as its password, so the node can always be reached; the Android app's Bluetooth set-up does the same job from a phone. The panel hides the Ethernet choices and the bridge option there, and warns about the right pins.
+- **Tests:** 859 host checks (797 on the `s3-eth` profile, as before, and 62 new ones on the `s3-wifi` profile: its pin table, its defaults, the refusal of the cable, and the layouts).
+- **Not done:** a run on either board. The `s3-wifi` profile has never been on an N16R8 board; nothing in the Ethernet path changed.
+- The host tests' `CMakeLists.txt` now also builds and runs `test_sensors` (136 checks): it existed and passed when compiled by hand, but it was missing from the build, so `build-test` could not find it.
+
 ## [0.2.7] - Placeholders in the usage lines
 
 - The usage lines of `adopt_node.py`, `provision_node.sh` and the bench guide show `<user>` and `~/.ssh/id_key` where they showed the names of a real account and key. No code changed.

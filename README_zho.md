@@ -25,12 +25,13 @@
 
 ---
 
-**诚实性检查 - 今天真正能运行的部分:** **成熟度：scaffolding。** 与硬件无关的核心（797 项检查：LD2450、LD2461 和四种存在传感器的解码器、LD2450 命令通道、设置及其校验、引脚表、用户与会话、映射引脚逻辑、网络方案以及消息序列化器，其输出被 ARMOR-COMMON 接受）已在电脑上测试，**网页面板**已在真实浏览器中对着替身节点试用，**固件镜像**能在 ESP-IDF 5.4.2 容器中构建。**它从未在开发板上运行过**：没有从真实模块捕获过任何帧，以太网、Wi-Fi 桥接、光传感器和更新的代码都未经尝试，雷达命令通道既未对照厂商文档也未对照模块检查，面板的 HTTPS 证书由节点自己生成且未在真实浏览器中试过，LD2461 和存在传感器的解码器只与其手册中的示例吻合，背后没有真实模块。
+**诚实性检查 - 今天真正能运行的部分:** **成熟度：scaffolding。** 与硬件无关的核心（859 项检查：LD2450、LD2461 和四种存在传感器的解码器、LD2450 命令通道、设置及其校验、引脚表、用户与会话、映射引脚逻辑、网络方案以及消息序列化器，其输出被 ARMOR-COMMON 接受）已在电脑上测试，**网页面板**已在真实浏览器中对着替身节点试用，**固件镜像**能在 ESP-IDF 5.4.2 容器中构建。**它从未在开发板上运行过**：没有从真实模块捕获过任何帧，以太网、Wi-Fi 桥接、光传感器和更新的代码都未经尝试，雷达命令通道既未对照厂商文档也未对照模块检查，面板的 HTTPS 证书由节点自己生成且未在真实浏览器中试过，LD2461 和存在传感器的解码器只与其手册中的示例吻合，背后没有真实模块。
 
 ---
 
 ## 🎯 概述
 
+* **两种开发板，一套固件：** Waveshare ESP32-S3-ETH（以太网，默认）和不带以太网的 ESP32-S3-WROOM-1 N16R8（仅 Wi-Fi：设置时会询问要加入的 Wi-Fi 网络，节点始终保留自己的网络）。镜像在构建时选择（`tools/build_node.sh generic s3-eth` 或 `generic s3-wifi`）；引脚表和接入方式随开发板而定，面板会隐藏开发板没有的功能，镜像只适用于对应的开发板。两者都能构建并已在电脑上测试，但都没在开发板上运行过。
 * **两个 270 度节点：** 每块 Waveshare ESP32-S3-ETH 在其三个 UART 上读取最多三个 LD2450 雷达，彼此相隔 75 度安装，通过有线以太网（W5500）使用 DHCP 或固定地址，由 PoE 或 USB 供电。Studio 的 *Add a 270° node* 会创建已与节点关联的三个雷达。
 * **每个节点自带网页面板，** 外观与 Studio 一致，支持七种语言，内嵌于固件：概览、网络、Wi-Fi、代理、雷达、引脚、用户、固件更新和日志。没有用户的节点会开启 Wi-Fi `ARMOR-SETUP-xxxxxx`，并用设置码创建第一个管理员；密码使用加盐 PBKDF2，会话是随机令牌，所有设置都保存在节点的闪存中，因此一个镜像适用于所有节点，且不会把任何密码编译进去（[面板](docs/NODE_PANEL.md)）。
 * **多个节点组成一个 Wi-Fi：** 每个节点可提供接到其以太网口的接入点；给节点设置相同的名称和密码，信道设为自动（按 MAC 取 1、6 或 11），手机和 Wi-Fi 传感器就会看到一个网络和一个 DHCP 服务器。这不是无线 mesh：每个节点仍保留自己的网线。节点也可以改为加入路由器的 Wi-Fi（可搜索网络），没有网线的节点可通过 Android 应用用**蓝牙**配置。
@@ -69,15 +70,16 @@ ARMOR-RADAR/
 
 ```bash
 cmake -S tests -B build/host && cmake --build build/host
-build/host/test_core && build/host/test_node && build/host/test_sensors   # 797 checks, -Werror
+build/host/test_core && build/host/test_node && build/host/test_sensors && build/host/test_board_wifi   # 859 checks, -Werror
 build/host/emit_samples | python tests/check_contract.py
 node tools/panel_mock.mjs --user admin:adminpass123   # the panel without a board
 python tools/make_fleet.py                             # once: the fleet secret and the shared settings
-tools/build_node.sh generic                           # ONE image for every board, in the ESP-IDF container
+tools/build_node.sh generic                           # ONE image for every Waveshare board (dist/generic-s3-eth.bin), in the ESP-IDF container
+tools/build_node.sh generic s3-wifi                   # the same firmware for an ESP32-S3-WROOM-1 N16R8 with no Ethernet
 ```
 
 ```bat
-tools\flash.bat generic COM5 monitor                  # each board, once, by USB-C
+tools\flash.bat generic COM5 monitor                  # each Waveshare board, once, by USB-C (add s3-wifi for the other board)
 ```
 
 ```bash

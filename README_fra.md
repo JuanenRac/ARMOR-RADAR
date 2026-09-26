@@ -25,12 +25,13 @@
 
 ---
 
-**Vérification d'honnêteté - ce qui fonctionne aujourd'hui:** **Maturité : scaffolding.** Le cœur indépendant du matériel (797 contrôles : les décodeurs du LD2450, du LD2461 et de quatre capteurs de présence, le canal de commande du LD2450, les réglages et leurs vérifications, la table des broches, les utilisateurs et sessions, la logique des broches associées, le plan réseau et le sérialiseur de messages, dont la sortie est acceptée par ARMOR-COMMON) est testé sur ordinateur, le **panneau web** a été essayé dans un vrai navigateur face à un nœud simulé, et l'**image du firmware se compile** dans le conteneur ESP-IDF 5.4.2. **Il n'a jamais tourné sur une carte** : aucune trame n'a été capturée depuis un vrai module, le code Ethernet, pont Wi-Fi, capteur de lumière et mise à jour est inessayé, le canal de commande des radars n'est vérifié ni face au document du fabricant ni face à un module, le certificat HTTPS du panneau est fabriqué par le nœud lui-même et inessayé dans un vrai navigateur, et les décodeurs du LD2461 et des capteurs de présence ne correspondent qu'aux exemples de leurs manuels, sans module réel.
+**Vérification d'honnêteté - ce qui fonctionne aujourd'hui:** **Maturité : scaffolding.** Le cœur indépendant du matériel (859 contrôles : les décodeurs du LD2450, du LD2461 et de quatre capteurs de présence, le canal de commande du LD2450, les réglages et leurs vérifications, la table des broches, les utilisateurs et sessions, la logique des broches associées, le plan réseau et le sérialiseur de messages, dont la sortie est acceptée par ARMOR-COMMON) est testé sur ordinateur, le **panneau web** a été essayé dans un vrai navigateur face à un nœud simulé, et l'**image du firmware se compile** dans le conteneur ESP-IDF 5.4.2. **Il n'a jamais tourné sur une carte** : aucune trame n'a été capturée depuis un vrai module, le code Ethernet, pont Wi-Fi, capteur de lumière et mise à jour est inessayé, le canal de commande des radars n'est vérifié ni face au document du fabricant ni face à un module, le certificat HTTPS du panneau est fabriqué par le nœud lui-même et inessayé dans un vrai navigateur, et les décodeurs du LD2461 et des capteurs de présence ne correspondent qu'aux exemples de leurs manuels, sans module réel.
 
 ---
 
 ## 🎯 Présentation
 
+* **Deux cartes, un firmware :** la Waveshare ESP32-S3-ETH (Ethernet, par défaut) et une ESP32-S3-WROOM-1 N16R8 sans Ethernet (Wi-Fi seul : sa configuration demande le réseau Wi-Fi à rejoindre et le nœud garde toujours son propre réseau). L'image se choisit à la compilation (`tools/build_node.sh generic s3-eth` ou `generic s3-wifi`) ; la table des broches et l'accès suivent la carte, le panneau masque ce que la carte n'a pas, et une image ne vaut que pour sa carte. Les deux compilent et sont testées sur ordinateur ; aucune n'a tourné sur une carte.
 * **Deux nœuds de 270 degrés :** chaque Waveshare ESP32-S3-ETH lit jusqu'à trois radars LD2450 sur ses trois UART, montés à 75 degrés l'un de l'autre, par Ethernet filaire (W5500) en DHCP ou adresse fixe, alimenté en PoE ou USB. *Add a 270° node* de Studio crée les trois radars déjà associés au nœud.
 * **Un panneau web sur chaque nœud,** à l'apparence de Studio et en sept langues, intégré au firmware : vue d'ensemble, réseau, Wi-Fi, broker, radars, broches, utilisateurs, mise à jour du firmware et journal. Un nœud sans utilisateur ouvre le Wi-Fi `ARMOR-SETUP-xxxxxx` et crée son premier administrateur avec un code d'installation ; les mots de passe sont en PBKDF2 salé, les sessions sont des jetons aléatoires et tous les réglages sont dans la flash du nœud, si bien qu'une image sert tous les nœuds et qu'aucun mot de passe n'est compilé ([le panneau](docs/NODE_PANEL.md)).
 * **Un seul Wi-Fi à partir de plusieurs nœuds :** chaque nœud peut offrir un point d'accès relié à son port Ethernet ; avec le même nom et mot de passe et le canal en automatique (1, 6 ou 11 selon la MAC), téléphones et capteurs Wi-Fi voient un seul réseau avec un seul serveur DHCP. Ce n'est pas un maillage radio : chaque nœud garde son câble. Un nœud peut aussi rejoindre le Wi-Fi d'un routeur (avec recherche de réseaux), et un nœud sans câble peut être configuré en **Bluetooth** depuis l'application Android.
@@ -69,15 +70,16 @@ ARMOR-RADAR/
 
 ```bash
 cmake -S tests -B build/host && cmake --build build/host
-build/host/test_core && build/host/test_node && build/host/test_sensors   # 797 checks, -Werror
+build/host/test_core && build/host/test_node && build/host/test_sensors && build/host/test_board_wifi   # 859 checks, -Werror
 build/host/emit_samples | python tests/check_contract.py
 node tools/panel_mock.mjs --user admin:adminpass123   # the panel without a board
 python tools/make_fleet.py                             # once: the fleet secret and the shared settings
-tools/build_node.sh generic                           # ONE image for every board, in the ESP-IDF container
+tools/build_node.sh generic                           # ONE image for every Waveshare board (dist/generic-s3-eth.bin), in the ESP-IDF container
+tools/build_node.sh generic s3-wifi                   # the same firmware for an ESP32-S3-WROOM-1 N16R8 with no Ethernet
 ```
 
 ```bat
-tools\flash.bat generic COM5 monitor                  # each board, once, by USB-C
+tools\flash.bat generic COM5 monitor                  # each Waveshare board, once, by USB-C (add s3-wifi for the other board)
 ```
 
 ```bash

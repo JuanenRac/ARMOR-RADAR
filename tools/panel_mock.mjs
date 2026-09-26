@@ -17,6 +17,9 @@ import { fileURLToPath } from "node:url";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const panel = path.join(here, "..", "panel");
 const port = Number(process.argv.find(a => /^\d+$/.test(a)) ?? 8090);
+// --board s3-wifi: the mock plays an ESP32-S3-WROOM-1 N16R8 with no Ethernet; the default is the Waveshare ESP32-S3-ETH (s3-eth)
+const board = process.argv.includes("--board") ? process.argv[process.argv.indexOf("--board") + 1] : "s3-eth";
+const wired = board !== "s3-wifi";
 const seeded = process.argv.includes("--user") ? process.argv[process.argv.indexOf("--user") + 1] : "";
 
 const users = new Map();
@@ -27,7 +30,7 @@ let rebootAt = 0;
 let logText = "I (1200) armor-node: A.R.M.O.R. node armor-a1b2c3, firmware 0.2.3\nI (1500) armor-net: link up\nI (2600) armor-net: address 192.168.0.181, gateway 192.168.0.1, netmask 255.255.255.0 (wire)\nW (9000) armor-radar: radar 2: no data (RX not connected, no power or the wrong pin) (0 bytes, 0 frames, 0 bad)\n";
 
 const config = {
-  v: 1, node: { id: "armor-a1b2c3", name: "Perimeter 1" }, uplink: "ethernet",
+  v: 1, node: { id: "armor-a1b2c3", name: "Perimeter 1" }, uplink: wired ? "ethernet" : "wifi",
   ip: { dhcp: true, address: "", netmask: "255.255.255.0", gateway: "", dns1: "", dns2: "", hostname: "" },
   ap: { enabled: true, ssid: "ARMOR", security: "wpa2", password_set: true, channel: 0, hidden: false, max_clients: 8, tx_power_dbm: 15, bandwidth_mhz: 20, country: "ES", bridge: true },
   sta: { enabled: false, ssid: "", password_set: false },
@@ -52,9 +55,10 @@ for (let gpio = 0; gpio <= 48; ++gpio) {
   if (gpio >= 26 && gpio <= 32) { use = "reserved"; reason = "flash"; header = false; }
   else if (gpio >= 33 && gpio <= 37) { use = "reserved"; reason = "psram"; }
   else if (gpio === 19 || gpio === 20) { use = "reserved"; reason = "usb"; }
-  else if (gpio >= 9 && gpio <= 14) { use = "reserved"; reason = "ethernet"; header = false; }
-  else if (gpio === 8) { use = "reserved"; reason = "camera"; header = false; }
-  else if (gpio >= 4 && gpio <= 7) use = "sd";
+  else if (wired && gpio >= 9 && gpio <= 14) { use = "reserved"; reason = "ethernet"; header = false; }
+  else if (wired && gpio === 8) { use = "reserved"; reason = "camera"; header = false; }
+  else if (wired && gpio >= 4 && gpio <= 7) use = "sd";
+  else if (!wired && [43, 44, 48].includes(gpio)) use = "caution";
   else if ([0, 3, 45, 46].includes(gpio)) use = "caution";
   catalog.push({ gpio, use, reason, on_header: header, adc1: gpio >= 1 && gpio <= 10 });
 }
@@ -66,7 +70,7 @@ const tokenOf = request => /armor_session=([0-9a-f]+)/.exec(request.headers.cook
 function status() {
   return {
     node_id: config.node.id, name: config.node.name, version: "0.2.3", uptime_s: Math.floor((Date.now() - started) / 1000) + 5400, reset_reason: "power_on", heap_free: 182000, heap_min: 151000, psram_free: 7400000, partition: "ota_0",
-    network: { layout: config.ap.enabled ? "ethernet+ap-bridged" : "ethernet", link_up: true, has_ip: true, ip: "192.168.0.181", netmask: "255.255.255.0", gateway: "192.168.0.1", dns: "192.168.0.1", mac: "34:85:18:a1:b2:c3", ethernet_ok: true,
+    network: { layout: !wired ? "wifi-station+ap" : config.ap.enabled ? "ethernet+ap-bridged" : "ethernet", link_up: true, has_ip: true, ip: "192.168.0.181", netmask: "255.255.255.0", gateway: "192.168.0.1", dns: "192.168.0.1", mac: "34:85:18:a1:b2:c3", board, ethernet_available: wired, ethernet_ok: true,
       ap_active: config.ap.enabled, ap_setup: users.size === 0, ap_bridged: config.ap.bridge, ap_ssid: users.size === 0 ? "ARMOR-SETUP-A1B2C3" : config.ap.ssid, ap_channel: 6, ap_clients: 2, sta_connected: false, sta_ssid: "", sta_rssi: 0 },
     mqtt: { enabled: config.mqtt.enabled, connected: true, clock_set: true, published: 4120 + Math.floor((Date.now() - started) / 200), withheld: "" },
     web: { mode: config.web.mode, https: config.web.mode !== "http", cert_sha256: "a3f1c07d9e2b4c58a7106f3de9b2c4815d6e7f80a1b2c3d4e5f60718293a4b5c" },
@@ -102,12 +106,13 @@ const server = createServer(async (request, response) => {
   const session = sessions.get(tokenOf(request));
   const setup = users.size === 0;
 
-  if (method === "GET" && route === "session") return json(response, 200, { setup, authenticated: !!session, user: session?.user ?? "", role: session?.role ?? "", node_id: config.node.id, language: config.ui.language, version: "0.2.3", setup_ssid: setup ? "ARMOR-SETUP-A1B2C3" : "", mac: "34:85:18:a1:b2:c3" });
+  if (method === "GET" && route === "session") return json(response, 200, { setup, authenticated: !!session, user: session?.user ?? "", role: session?.role ?? "", node_id: config.node.id, language: config.ui.language, version: "0.2.3", setup_ssid: setup ? "ARMOR-SETUP-A1B2C3" : "", mac: "34:85:18:a1:b2:c3", board, ethernet: wired });
   if (method === "POST" && route === "setup") {
     if (!setup) return json(response, 403, { error: "forbidden" });
     if (body.code !== "TESTCODE") return json(response, 403, { error: "wrong_code" });
     if (!/^[a-z0-9_.-]{3,32}$/.test(body.user ?? "")) return json(response, 422, { error: "invalid_name" });
     if ((body.password ?? "").length < 8) return json(response, 422, { error: "weak_password" });
+    if (!wired && !body.wifi_ssid) return json(response, 422, { error: "wifi_required" });
     users.set(body.user, { password: body.password, role: "admin" });
     return json(response, 200, { ok: true, restart_required: true });
   }

@@ -198,22 +198,26 @@ function overviewPage() {
     card(t("ovNode"), kv([[t("nodeId"), s.node_id], [t("nodeName"), s.name], [t("firmware"), s.version + " (" + s.partition + ")"], [t("uptime"), formatUptime(s.uptime_s)],
       [t("resetReason"), reasonText(s.reset_reason)], [t("memory"), Math.round(s.heap_free / 1024) + " kB" + (s.psram_free ? " + " + Math.round(s.psram_free / 1048576 * 10) / 10 + " MB PSRAM" : "")],
       [t("light"), s.lux === null ? t("unknown") : s.lux + " lx"]])),
-    card(t("ovNetwork"), kv([[t("layout"), n.layout], [t("link"), n.link_up ? t("linkUp") : t("linkDown")], [t("address"), n.has_ip ? n.ip : "—"], [t("netmask"), n.netmask || "—"], [t("gateway"), n.gateway || "—"],
+    card(t("ovNetwork"), kv([[t("board"), BOARD_NAMES[n.board] || n.board || "—"], [t("layout"), n.layout], [t("link"), n.link_up ? t("linkUp") : t("linkDown")], [t("address"), n.has_ip ? n.ip : "—"], [t("netmask"), n.netmask || "—"], [t("gateway"), n.gateway || "—"],
       [t("dns"), n.dns || "—"], [t("mac"), n.mac],
       n.ap_active ? [t("apActive"), "“" + n.ap_ssid + "” · " + t("channel") + " " + n.ap_channel + " · " + n.ap_clients + " " + t("apClients") + " · " + layoutNote] : null,
       n.sta_ssid ? [t("station"), n.sta_ssid + (n.sta_connected ? " · " + n.sta_rssi + " dBm" : " · " + t("notConnected"))] : null]),
-      n.ethernet_ok ? null : note(t("ethernetMissing"), "bad")),
+      n.ethernet_available === false || n.ethernet_ok ? null : note(t("ethernetMissing"), "bad")),
     card(t("ovBroker"), kv([[t("navBroker"), !m.enabled ? t("notConfigured") : m.connected ? t("connected") : t("notConnected")], [t("clock"), m.clock_set ? t("clockSet") : t("clockNotSet")], [t("messages"), m.published]]),
       m.withheld === "light" ? note(t("withheldLight")) : m.withheld === "radars" ? note(t("withheldRadars")) : null),
     card(t("radarsTitle"), el("div", { class: "row" }, s.radars.map(r => el("div", {}, el("h3", {}, t("sensorN", r.radar), r.enabled && r.model ? " · " + modelOf(r.model).label : ""), statePill(r.enabled ? r.state : "disabled"),
       r.enabled ? el("p", { class: "muted" }, presenceText(r) ? presenceText(r) + " · " : "", t("framesRate", r.fps), " · ", t("counters", r.bytes, r.frames, r.bad_frames)) : null)))));
 }
 
+// The board the image is for: the s3-eth board has an Ethernet port, the s3-wifi board has none (its way in is always Wi-Fi).
+const hasEthernet = () => !(S.session && S.session.ethernet === false);
+const BOARD_NAMES = { "s3-eth": "Waveshare ESP32-S3-ETH", "s3-wifi": "ESP32-S3-WROOM-1 N16R8" };
+
 function networkPage() {
-  const cfg = S.cfg, wired = cfg.uplink === "ethernet";
+  const cfg = S.cfg, wired = hasEthernet() && cfg.uplink === "ethernet";
   return el("div", { class: "grid wide" },
-    card(t("netTitle"),
-      field("uplink", "uplink", { type: "select", rerender: true, options: [["ethernet", t("uplinkEthernet")], ["wifi", t("uplinkWifi")]] }),
+    card(t(hasEthernet() ? "netTitle" : "nodeTitle"),
+      hasEthernet() ? field("uplink", "uplink", { type: "select", rerender: true, options: [["ethernet", t("uplinkEthernet")], ["wifi", t("uplinkWifi")]] }) : null,
       wired ? field("dhcp", "ip.dhcp", { type: "checkbox", rerender: true }) : null,
       wired && !cfg.ip.dhcp ? el("div", { class: "row" }, field("address", "ip.address"), field("netmask", "ip.netmask"), field("gateway", "ip.gateway"), field("dns1", "ip.dns1"), field("dns2", "ip.dns2")) : null,
       field("hostname", "ip.hostname", { hint: t("hostnameHint") }),
@@ -258,7 +262,7 @@ function wifiPage() {
           field("maxClients", "ap.max_clients", { type: "number", min: 1, max: 10 }), field("txPower", "ap.tx_power_dbm", { type: "number", min: 2, max: 20 }),
           field("bandwidth", "ap.bandwidth_mhz", { type: "select", number: true, options: [[20, t("bw20")], [40, t("bw40")]] }), field("country", "ap.country", { max: 2 })),
         field("hidden", "ap.hidden", { type: "checkbox" }),
-        cfg.uplink === "ethernet" ? field("bridge", "ap.bridge", { type: "checkbox" }) : null,
+        hasEthernet() && cfg.uplink === "ethernet" ? field("bridge", "ap.bridge", { type: "checkbox" }) : null,
         note(t("meshNote"), "info")] : null),
     card(t("wifiSta"), field("staEnable", "sta.enabled", { type: "checkbox", rerender: true }),
       cfg.sta.enabled ? [el("div", { class: "row" }, field("ssid", "sta.ssid", { max: 32 }), field("wifiPassword", "sta.password", { type: "password" }))] : null,
@@ -343,7 +347,7 @@ async function pinCommand(name, command) {
 
 function pinsPage() {
   const pins = S.cfg.pins;
-  return el("div", {}, note(t("pinsWarn")), el("p", { class: "muted" }, t("pinsIntro")), note(t("pinsRestart"), "info"),
+  return el("div", {}, note(t(hasEthernet() ? "pinsWarn" : "pinsWarnWifi")), el("p", { class: "muted" }, t("pinsIntro")), note(t("pinsRestart"), "info"),
     el("div", { class: "grid wide" }, pins.length ? pins.map((_, i) => pinCard(i)) : [el("p", { class: "muted" }, t("noPins"))]),
     isAdmin() && pins.length < 16 ? el("div", { class: "actions" }, el("button", { class: "b primary", onclick: addPin }, t("addPin"))) : null);
 }
@@ -639,7 +643,7 @@ function loginScreen() {
 }
 
 function setupScreen() {
-  const form = { code: "", user: "admin", password: "", language: LANGS[lang][0] };
+  const form = { code: "", user: "admin", password: "", language: LANGS[lang][0], wifi_ssid: "", wifi_password: "" };
   const message = el("p", { class: "err" });
   const submit = async e => {
     e.preventDefault();
@@ -655,6 +659,10 @@ function setupScreen() {
     el("label", { class: "field" }, el("span", {}, t("setupCode")), el("input", { autocomplete: "off", autocapitalize: "characters", oninput: e => { form.code = e.target.value.trim().toUpperCase(); } })),
     el("label", { class: "field" }, el("span", {}, t("adminName")), el("input", { value: "admin", autocomplete: "username", oninput: e => { form.user = e.target.value; } })),
     el("label", { class: "field" }, el("span", {}, t("newPassword")), el("input", { type: "password", autocomplete: "new-password", oninput: e => { form.password = e.target.value; } })),
+    ...(hasEthernet() ? [] : [
+      el("h3", {}, t("setupWifiTitle")), el("p", { class: "hint" }, t("setupWifiHelp")),
+      el("label", { class: "field" }, el("span", {}, t("ssid")), el("input", { autocomplete: "off", maxLength: 32, oninput: e => { form.wifi_ssid = e.target.value; } })),
+      el("label", { class: "field" }, el("span", {}, t("wifiPassword")), el("input", { type: "password", autocomplete: "off", oninput: e => { form.wifi_password = e.target.value; } }))]),
     message, el("button", { class: "b primary", type: "submit" }, t("createAdmin")), langPicker()));
 }
 

@@ -25,12 +25,13 @@
 
 ---
 
-**Ehrlichkeitsprüfung - was heute läuft:** **Reifegrad: Scaffolding.** Der hardwareunabhängige Kern (797 Prüfungen: die Dekoder des LD2450, des LD2461 und vier Präsenzsensoren, der Befehlskanal des LD2450, die Einstellungen und ihre Prüfungen, die Pin-Tabelle, Benutzer und Sitzungen, die Logik der zugeordneten Pins, der Netzplan und der Nachrichten-Serialisierer, dessen Ausgabe ARMOR-COMMON akzeptiert) ist am Rechner getestet, das **Web-Panel** wurde in einem echten Browser gegen einen Stellvertreter-Knoten ausprobiert, und das **Firmware-Image baut** im ESP-IDF-5.4.2-Container. **Es lief nie auf einer Platine**: kein Rahmen wurde von einem echten Modul aufgenommen, der Code für Ethernet, WLAN-Brücke, Lichtsensor und Update ist unerprobt, der Befehlskanal der Radare ist weder am Herstellerdokument noch an einem Modul geprüft, das HTTPS-Zertifikat des Panels erzeugt der Knoten selbst und es ist in einem echten Browser unerprobt, und die Dekoder für LD2461 und Präsenzsensoren entsprechen nur den Beispielen ihrer Handbücher, ohne echtes Modul.
+**Ehrlichkeitsprüfung - was heute läuft:** **Reifegrad: Scaffolding.** Der hardwareunabhängige Kern (859 Prüfungen: die Dekoder des LD2450, des LD2461 und vier Präsenzsensoren, der Befehlskanal des LD2450, die Einstellungen und ihre Prüfungen, die Pin-Tabelle, Benutzer und Sitzungen, die Logik der zugeordneten Pins, der Netzplan und der Nachrichten-Serialisierer, dessen Ausgabe ARMOR-COMMON akzeptiert) ist am Rechner getestet, das **Web-Panel** wurde in einem echten Browser gegen einen Stellvertreter-Knoten ausprobiert, und das **Firmware-Image baut** im ESP-IDF-5.4.2-Container. **Es lief nie auf einer Platine**: kein Rahmen wurde von einem echten Modul aufgenommen, der Code für Ethernet, WLAN-Brücke, Lichtsensor und Update ist unerprobt, der Befehlskanal der Radare ist weder am Herstellerdokument noch an einem Modul geprüft, das HTTPS-Zertifikat des Panels erzeugt der Knoten selbst und es ist in einem echten Browser unerprobt, und die Dekoder für LD2461 und Präsenzsensoren entsprechen nur den Beispielen ihrer Handbücher, ohne echtes Modul.
 
 ---
 
 ## 🎯 Überblick
 
+* **Zwei Platinen, eine Firmware:** die Waveshare ESP32-S3-ETH (Ethernet, Standard) und ein ESP32-S3-WROOM-1 N16R8 ohne Ethernet (nur WLAN: die Einrichtung fragt nach dem WLAN zum Beitreten, und der Knoten behält immer sein eigenes Netz). Das Image wird beim Bauen gewählt (`tools/build_node.sh generic s3-eth` oder `generic s3-wifi`); Pin-Tabelle und Zugangsweg folgen der Platine, das Panel blendet aus, was die Platine nicht hat, und ein Image gilt nur für seine Platine. Beide bauen und sind am Rechner getestet; keine lief je auf einer Platine.
 * **Zwei Knoten mit 270 Grad:** jedes Waveshare ESP32-S3-ETH liest bis zu drei LD2450-Radare an seinen drei UARTs, im Abstand von 75 Grad montiert, über kabelgebundenes Ethernet (W5500) mit DHCP oder fester Adresse, gespeist per PoE oder USB. Studios *Add a 270° node* legt die drei Radare bereits dem Knoten zugeordnet an.
 * **Ein Web-Panel auf jedem Knoten,** im Aussehen von Studio und in sieben Sprachen, in die Firmware eingebettet: Übersicht, Netzwerk, WLAN, Broker, Radare, Pins, Benutzer, Firmware-Update und Protokoll. Ein Knoten ohne Benutzer öffnet das WLAN `ARMOR-SETUP-xxxxxx` und legt mit einem Einrichtungscode seinen ersten Administrator an; Passwörter sind gesalzenes PBKDF2, Sitzungen zufällige Token, und jede Einstellung liegt im Flash des Knotens, sodass ein Image alle Knoten bedient und kein Passwort einkompiliert ist ([das Panel](docs/NODE_PANEL.md)).
 * **Ein WLAN aus vielen Knoten:** jeder Knoten kann einen an seinen Ethernet-Port angebundenen Access Point anbieten; mit gleichem Namen und Passwort und dem Kanal auf automatisch (1, 6 oder 11 nach MAC) sehen Telefone und WLAN-Sensoren ein Netz mit einem DHCP-Server. Es ist kein Funk-Mesh: jeder Knoten behält sein Kabel. Ein Knoten kann stattdessen dem WLAN eines Routers beitreten (mit Netzwerksuche), und einer ohne Kabel lässt sich per **Bluetooth** über die Android-App konfigurieren.
@@ -69,15 +70,16 @@ ARMOR-RADAR/
 
 ```bash
 cmake -S tests -B build/host && cmake --build build/host
-build/host/test_core && build/host/test_node && build/host/test_sensors   # 797 checks, -Werror
+build/host/test_core && build/host/test_node && build/host/test_sensors && build/host/test_board_wifi   # 859 checks, -Werror
 build/host/emit_samples | python tests/check_contract.py
 node tools/panel_mock.mjs --user admin:adminpass123   # the panel without a board
 python tools/make_fleet.py                             # once: the fleet secret and the shared settings
-tools/build_node.sh generic                           # ONE image for every board, in the ESP-IDF container
+tools/build_node.sh generic                           # ONE image for every Waveshare board (dist/generic-s3-eth.bin), in the ESP-IDF container
+tools/build_node.sh generic s3-wifi                   # the same firmware for an ESP32-S3-WROOM-1 N16R8 with no Ethernet
 ```
 
 ```bat
-tools\flash.bat generic COM5 monitor                  # each board, once, by USB-C
+tools\flash.bat generic COM5 monitor                  # each Waveshare board, once, by USB-C (add s3-wifi for the other board)
 ```
 
 ```bash
