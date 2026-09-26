@@ -4,6 +4,7 @@ All notable changes to this project are documented here.
 
 ## [0.2.9] - The Bluetooth `hello` says what kind of node it is
 
+- **The panel's rows** no longer stretch to the tallest field of a row, and the JSON reader's header comment is the same as in the other node projects: the files this project shares with ARMOR-SOLAR and ARMOR-ELECTRICAL are now kept once in ARMOR-COMMON's `firmware_base` (no behaviour changes).
 - The answer to `hello` on the Bluetooth configuration channel now carries `kind` (`radar`; the solar and electrical nodes say `solar` and `electrical`), so the app can tell the three kinds of node apart: the identifier of a radar node (`armor-` and the MAC) says nothing about it. Nothing else of the protocol changes.
 
 ## [0.2.8] - One firmware for two boards: with Ethernet and without
