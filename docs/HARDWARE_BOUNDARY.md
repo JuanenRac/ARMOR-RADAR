@@ -93,4 +93,4 @@ the server's day/night decisions. It also withholds it while no radar is reporti
 The PoE power path and its current, the TLS trust anchor (a CA certificate at `certs/ca.pem` is embedded when it exists) and TLS for the panel,
 real captured radar frames, the command channel against a real module, the LD2461, the Wi-Fi access point's throughput and roaming, the bridge
 between the wire and the access point on a real board, and everything that needs the physical board. See
-[ARMOR-HARDWARE](../../ARMOR-HARDWARE) for the enclosure and its validation boundary.
+[ARMOR-HARDWARE](https://github.com/JuanenRac/ARMOR-HARDWARE) for the enclosure and its validation boundary.
