@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented here.
 
+## [0.3.0]
+
+- A GitHub Actions CI baseline (`.github/workflows/ci.yml`): validates the manifest, the version, CHANGELOG.md's heading, the seven README translations' structure and its own local Markdown links, then runs this project's real build/test through `tools/armor_project_tool.py build-test .` (vendored from ARMOR-COMMON, alongside `tools/armor_ci_validate.py` and `tools/_armor_readme_parity.py`, which do the manifest/docs checking).
+
 ## [0.2.9] - The Bluetooth `hello` says what kind of node it is
 
 - **The panel's rows** no longer stretch to the tallest field of a row, and the JSON reader's header comment is the same as in the other node projects: the files this project shares with ARMOR-SOLAR and ARMOR-ELECTRICAL are now kept once in ARMOR-COMMON's `firmware_base` (no behaviour changes).
