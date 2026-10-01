@@ -4,6 +4,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <vector>
 extern "C" {
 #include "esp_log.h"
 #include "mbedtls/ctr_drbg.h"
@@ -69,11 +70,13 @@ bool make(const std::string& node_id, std::string& certificate_pem, std::string&
     if (mbedtls_x509write_crt_set_serial_raw(&crt, serial, sizeof serial) != 0) break;
     if (mbedtls_x509write_crt_set_validity(&crt, kNotBefore, kNotAfter) != 0) break;
     if (mbedtls_x509write_crt_set_basic_constraints(&crt, 0, -1) != 0) break;
-    unsigned char buffer[1600];
-    if (mbedtls_x509write_crt_pem(&crt, buffer, sizeof buffer, mbedtls_ctr_drbg_random, &drbg) != 0) break;
-    certificate_pem.assign(reinterpret_cast<char*>(buffer), std::strlen(reinterpret_cast<char*>(buffer)) + 1);
-    if (mbedtls_pk_write_key_pem(&key, buffer, sizeof buffer) != 0) break;
-    key_pem.assign(reinterpret_cast<char*>(buffer), std::strlen(reinterpret_cast<char*>(buffer)) + 1);
+    // On the heap, not the stack: writing a certificate already needs several KB of stack of its own inside mbedTLS (a 4 KB output buffer),
+    // and the first boot of a node died right here with a stack overflow in the main task (found on the real board).
+    std::vector<unsigned char> buffer(1600);
+    if (mbedtls_x509write_crt_pem(&crt, buffer.data(), buffer.size(), mbedtls_ctr_drbg_random, &drbg) != 0) break;
+    certificate_pem.assign(reinterpret_cast<char*>(buffer.data()), std::strlen(reinterpret_cast<char*>(buffer.data())) + 1);
+    if (mbedtls_pk_write_key_pem(&key, buffer.data(), buffer.size()) != 0) break;
+    key_pem.assign(reinterpret_cast<char*>(buffer.data()), std::strlen(reinterpret_cast<char*>(buffer.data())) + 1);
     ok = true;
   } while (false);
   mbedtls_x509write_crt_free(&crt);

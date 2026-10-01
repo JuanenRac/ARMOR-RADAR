@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented here.
 
+## [0.3.1] - A board that boots, and a log that stays readable
+
+- **Boot loop fixed (shared firmware base):** generating the TLS certificate overflowed the main task's stack on the first boot of a board (every start ended in "A stack overflow in task main"); the buffer is on the heap and the stack is 16 KB. Verified on a real board with the Ethernet image.
+- **A light sensor that is not there is asked twice a minute, not every two seconds,** and the I2C driver's own error lines are silenced after the first report, so a board without a VEML7700 no longer fills the log with bus errors.
+
 ## [0.3.0]
 
 - A GitHub Actions CI baseline (`.github/workflows/ci.yml`): validates the manifest, the version, CHANGELOG.md's heading, the seven README translations' structure and its own local Markdown links, then runs this project's real build/test through `tools/armor_project_tool.py build-test .` (vendored from ARMOR-COMMON, alongside `tools/armor_ci_validate.py` and `tools/_armor_readme_parity.py`, which do the manifest/docs checking).

@@ -42,9 +42,13 @@ void light_task(void*) {
   for (;;) {
     if (need_settle) {
       if (!write_register(kRegisterConfig, config_word(kLadder[step]))) {
-        if (++failures == 3) ESP_LOGE(kTag, "the VEML7700 does not answer (SDA %d, SCL %d, address 0x%02x)", g_sda, g_scl, kAddress);
+        if (++failures == 3) {
+          ESP_LOGE(kTag, "the VEML7700 does not answer (SDA %d, SCL %d, address 0x%02x): it is asked again twice a minute", g_sda, g_scl, kAddress);
+          esp_log_level_set("i2c.master", ESP_LOG_NONE);   // the bus driver says the same thing in three lines every time; this one line says it once
+        }
         g_lux.store(g_fallback);
-        vTaskDelay(pdMS_TO_TICKS(2000));
+        // A sensor that is not there is asked about twice a minute, not every two seconds (the log was a wall of I2C errors on a board without it).
+        vTaskDelay(pdMS_TO_TICKS(failures < 3 ? 2000 : 30000));
         continue;
       }
       vTaskDelay(pdMS_TO_TICKS(settle_ms(kLadder[step])));
@@ -52,6 +56,7 @@ void light_task(void*) {
     }
     std::uint16_t counts = 0;
     if (!read_register(kRegisterAls, counts)) { need_settle = true; vTaskDelay(pdMS_TO_TICKS(500)); continue; }
+    if (failures >= 3) { ESP_LOGI(kTag, "the VEML7700 answers"); esp_log_level_set("i2c.master", ESP_LOG_ERROR); }
     failures = 0;
     const std::size_t next = next_step(step, counts);
     if (next != step) {  // the setting does not fit this light: change it and read again once it settled
