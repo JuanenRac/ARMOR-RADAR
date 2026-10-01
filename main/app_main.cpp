@@ -113,6 +113,10 @@ extern "C" void app_main() {
   const armor::netplan::Plan plan = armor::netplan::plan_network(settings, setup, armor::store::setup_code(), armor::store::mac_tail(), armor::store::mac_sum());
   const bool network_ok = armor::network::start(settings, plan);
   if (!network_ok) ESP_LOGE(kTag, "the network could not be started: the node stays local");
+  if (network_ok && !plan.ap.enabled) {
+    // Without an address after 90 s (no cable, no Wi-Fi it can join) the node would be unreachable: it opens the set-up access point again.
+    armor::network::arm_rescue(armor::netplan::plan_network(settings, true, armor::store::setup_code(), armor::store::mac_tail(), armor::store::mac_sum()), 90);
+  }
   const bool panel_ok = network_ok && armor::web::start(settings);
   armor::mqtt_link::start(settings);
   armor::ble_provision::start(settings, setup);   // only when the settings say so: Bluetooth stays unused otherwise

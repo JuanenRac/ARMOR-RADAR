@@ -232,6 +232,9 @@ static void test_settings_rejections() {
   CHECK(rejected(R"({"ip":{"dhcp":false,"address":"10.0.0.1","netmask":"255.255.255.0","gateway":"10.0.0.1"}})", "ip.gateway", "conflict"));
   CHECK(rejected(R"({"ip":{"dhcp":false,"address":"10.0.0.5","netmask":"255.255.255.0","gateway":"10.0.0.1","dns1":"x"}})", "ip.dns1", "invalid"));
   CHECK(rejected(R"({"ip":{"hostname":"Bad_Name"}})", "ip.hostname", "invalid"));
+  // a fixed address is checked whichever connection the node uses: the Wi-Fi station too
+  CHECK(rejected(R"({"uplink":"wifi","sta":{"enabled":true,"ssid":"Home"},"ip":{"dhcp":false,"address":"192.168.0.60","netmask":"255.255.255.0","gateway":"192.168.5.1"}})", "ip.gateway", "outside_subnet"));
+  CHECK(rejected(R"({"uplink":"wifi","sta":{"enabled":true,"ssid":"Home"},"ip":{"dhcp":false,"address":""}})", "ip.address", "required"));
   CHECK(rejected(R"({"ap":{"enabled":true,"ssid":"","password":"12345678"}})", "ap.ssid", "required"));
   CHECK(rejected(R"({"ap":{"enabled":true,"ssid":"X","password":"short"}})", "ap.password", "invalid_key"));
   CHECK(rejected(R"({"ap":{"enabled":true,"ssid":"X"}})", "ap.password", "required"));

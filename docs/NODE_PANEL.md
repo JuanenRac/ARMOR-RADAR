@@ -8,7 +8,7 @@ stand-in node (`tools/panel_mock.mjs`) in a real browser, and the node side is c
 ## First start: set-up
 
 A node that has no user is in **set-up**: it answers only the set-up screen, and it opens a Wi-Fi network of its own,
-`ARMOR-SETUP-xxxxxx` (WPA2, never bridged), so a node with no cable can be reached too (join it and open `http://192.168.4.1/`).
+`ARMOR-SETUP-xxxxxx` (WPA2, never bridged), so a node with no cable can be reached too (join it and open `http://192.168.4.1/`). A node that is set up but has no address 90 seconds after it starts (no cable, no Wi-Fi it can join, no access point of its own) opens the same set-up Wi-Fi again, with the set-up code as its password, so it can always be reached. A fixed address (address, mask, gateway, DNS) can be given for the cable or for the Wi-Fi station.
 
 The first administrator is created with a **set-up code**. The code is either
 

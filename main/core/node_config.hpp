@@ -397,7 +397,7 @@ inline Problems validate(const Settings& s) {
 
   // network
   if (s.uplink == Uplink::kEthernet && !board::kHasEthernet) bad(problems, "uplink", "not_available");   // this board has no cable
-  if (s.uplink == Uplink::kEthernet && !s.ip.dhcp) {
+  if (!s.ip.dhcp) {   // a fixed address is for whichever connection the node uses, the cable or the Wi-Fi station
     std::uint32_t address = 0, mask = 0, gateway = 0, dns = 0;
     const bool address_ok = net::parse_ipv4(s.ip.address, address), mask_ok = net::parse_ipv4(s.ip.netmask, mask) && net::valid_netmask(mask);
     if (!address_ok || !net::usable_host_address(address)) bad(problems, "ip.address", s.ip.address.empty() ? "required" : "invalid");

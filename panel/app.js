@@ -214,12 +214,12 @@ const hasEthernet = () => !(S.session && S.session.ethernet === false);
 const BOARD_NAMES = { "s3-eth": "Waveshare ESP32-S3-ETH", "s3-wifi": "ESP32-S3-WROOM-1 N16R8" };
 
 function networkPage() {
-  const cfg = S.cfg, wired = hasEthernet() && cfg.uplink === "ethernet";
+  const cfg = S.cfg;
   return el("div", { class: "grid wide" },
     card(t(hasEthernet() ? "netTitle" : "nodeTitle"),
       hasEthernet() ? field("uplink", "uplink", { type: "select", rerender: true, options: [["ethernet", t("uplinkEthernet")], ["wifi", t("uplinkWifi")]] }) : null,
-      wired ? field("dhcp", "ip.dhcp", { type: "checkbox", rerender: true }) : null,
-      wired && !cfg.ip.dhcp ? el("div", { class: "row" }, field("address", "ip.address"), field("netmask", "ip.netmask"), field("gateway", "ip.gateway"), field("dns1", "ip.dns1"), field("dns2", "ip.dns2")) : null,
+      field("dhcp", "ip.dhcp", { type: "checkbox", rerender: true }),
+      !cfg.ip.dhcp ? el("div", { class: "row" }, field("address", "ip.address"), field("netmask", "ip.netmask"), field("gateway", "ip.gateway"), field("dns1", "ip.dns1"), field("dns2", "ip.dns2")) : null,
       field("hostname", "ip.hostname", { hint: t("hostnameHint") }),
       field("nodeName", "node.name"), field("nodeId", "node.id"),
       note(t("netRestartNote"), "info")),

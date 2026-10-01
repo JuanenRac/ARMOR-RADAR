@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here.
 
+## [0.3.2] - A node that has just been set up can always be reached
+
+- **A rescue access point.** A node that is set up (it has a user) but has no address 90 seconds after it starts - no cable, no Wi-Fi network it can join, no access point of its own - opens the set-up Wi-Fi `ARMOR-SETUP-xxxxxx` again, protected with the set-up code. Before, such a node closed its set-up Wi-Fi when the first administrator was created and vanished: no network at all (a real case on the bench: Wi-Fi given over Bluetooth, the node restarted and could not be found).
+- **Why it did not join the Wi-Fi.** The `hello` of the Bluetooth channel and the panel's status carry `sta_error` (`network_not_found`, `wrong_password` or `failed`), read from the reason the radio gives when a connection fails.
+- **Bluetooth stays on while there is no address.** A node set up to join a Wi-Fi network keeps advertising until it has an address, and stops two minutes after it has one, so the app can come back, read the outcome and correct the Wi-Fi.
+- **A fixed address on the Wi-Fi too.** DHCP or a fixed address (address, mask, gateway, DNS) is now valid whichever connection the node uses; it was only honoured on the cable. The panel offers it for both, and the settings check refuses a bad address on the Wi-Fi like on the cable (2 new checks).
+- Built with ESP-IDF 5.5.5.
+
 ## [0.3.1] - A board that boots, and a log that stays readable
 
 - **Boot loop fixed (shared firmware base):** generating the TLS certificate overflowed the main task's stack on the first boot of a board (every start ended in "A stack overflow in task main"); the buffer is on the heap and the stack is 16 KB. Verified on a real board with the Ethernet image.
