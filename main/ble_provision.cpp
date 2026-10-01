@@ -237,9 +237,9 @@ void host_task(void*) {
 }  // namespace
 
 bool start(const config::Settings& settings, bool setup_mode) {
-  // In `setup` mode the node also listens when it was set up to join a Wi-Fi network: until it has an address it cannot be reached any other way.
-  const bool needs_wifi = settings.uplink == config::Uplink::kWifi;
-  const bool wanted = settings.ble == config::BleMode::kAlways || (settings.ble == config::BleMode::kSetup && (setup_mode || needs_wifi));
+  // In `setup` mode the node listens at every start: until it has an address it cannot be reached any other way (a board with a cable that is not plugged in, a Wi-Fi
+  // network that was not joined), and the watch task stops the advertising a couple of minutes after the node has an address.
+  const bool wanted = settings.ble == config::BleMode::kAlways || settings.ble == config::BleMode::kSetup;
   if (!wanted) return false;
   g_name = "ARMOR-" + store::mac_tail();
   for (char& c : g_name) if (c >= 'a' && c <= 'z') c = static_cast<char>(c - 'a' + 'A');
@@ -257,7 +257,7 @@ bool start(const config::Settings& settings, bool setup_mode) {
   if (ble_gatts_count_cfg(kServices) != 0 || ble_gatts_add_svcs(kServices) != 0) { ESP_LOGE(kTag, "the Bluetooth service could not be added"); return false; }
   ble_svc_gap_device_name_set(g_name.c_str());
   ble_att_set_preferred_mtu(247);
-  xTaskCreate(worker_task, "ble-worker", 8192, nullptr, 4, nullptr);
+  xTaskCreate(worker_task, "ble-worker", 16384, nullptr, 4, nullptr);
   nimble_port_freertos_init(host_task);
   g_running = true;
   if (settings.ble == config::BleMode::kSetup && !setup_mode) xTaskCreate(advertising_watch_task, "ble-watch", 3072, nullptr, 2, nullptr);

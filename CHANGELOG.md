@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented here.
 
+## [0.3.4] - A login that actually leaves you signed in
+
+- **The session cookie was garbage:** it was built in a function's own local variable, and the HTTP server only keeps a pointer to a header's text, not a copy of it; by the time the response was really sent, that memory had already been reused for something else. The login or the first-time set-up answered "ok", but no browser ever kept a real session - re-entering the panel always looked like a fresh sign-in. The cookie is now kept alive until the response goes out.
+- Built with ESP-IDF 5.5.5.
+
+## [0.3.3] - Saving the settings over Bluetooth no longer restarts the node
+
+- **Bluetooth task stack:** the task that serves the Bluetooth channel (`ble-worker`) ran out of stack while saving a Wi-Fi network with a fixed address, and the node restarted in the middle of the set-up (the app said the connection was lost). Its stack is now 16 KB instead of 8 KB.
+- **Bluetooth is on at every start while there is no address:** a node set up with a cable that is not plugged in, or whose Wi-Fi was not joined, did not advertise at all and could not be found by the app; it now advertises at every start and stops a couple of minutes after it has an address.
+- Built with ESP-IDF 5.5.5.
+
 ## [0.3.2] - A node that has just been set up can always be reached
 
 - **A rescue access point.** A node that is set up (it has a user) but has no address 90 seconds after it starts - no cable, no Wi-Fi network it can join, no access point of its own - opens the set-up Wi-Fi `ARMOR-SETUP-xxxxxx` again, protected with the set-up code. Before, such a node closed its set-up Wi-Fi when the first administrator was created and vanished: no network at all (a real case on the bench: Wi-Fi given over Bluetooth, the node restarted and could not be found).

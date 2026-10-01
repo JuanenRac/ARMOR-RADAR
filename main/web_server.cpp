@@ -219,7 +219,11 @@ bool require(httpd_req_t* r, Who& who, bool admin, bool writes) {
   return true;
 }
 
-void start_session(httpd_req_t* r, const std::string& user, auth::Role role) {
+// httpd_resp_set_hdr keeps only a pointer to the header's text, not a copy of it, so that text must stay alive until the response is actually
+// sent - which happens back in the caller, after this function has returned. The cookie is therefore written into a string the CALLER owns
+// (cookie_out), not one of this function's own locals (one was tried first: the cookie came out as a few bytes of whatever used that stack
+// slot next - the login looked to succeed but no browser ever kept a session, found for real on a radar node's own panel).
+void start_session(httpd_req_t* r, const std::string& user, auth::Role role, std::string& cookie_out) {
   std::uint8_t bytes[24];
   random_bytes(bytes, sizeof bytes);
   const std::string token = auth::to_hex(bytes, sizeof bytes);
@@ -227,8 +231,8 @@ void start_session(httpd_req_t* r, const std::string& user, auth::Role role) {
     std::lock_guard<std::mutex> guard(g_lock);
     g_sessions.create(token, user, role, now_ms());
   }
-  const std::string cookie = std::string(kCookie) + "=" + token + "; " + webpolicy::cookie_attributes(is_tls(r), 1800);
-  httpd_resp_set_hdr(r, "Set-Cookie", cookie.c_str());
+  cookie_out = std::string(kCookie) + "=" + token + "; " + webpolicy::cookie_attributes(is_tls(r), 1800);
+  httpd_resp_set_hdr(r, "Set-Cookie", cookie_out.c_str());
 }
 
 // ---- handlers -----------------------------------------------------------------------------------------------------------------------
@@ -296,7 +300,8 @@ esp_err_t post_setup(httpd_req_t* r) {
     g_throttle.success(source);
   }
   ESP_LOGI(kTag, "setup complete: the administrator \"%s\" exists; the node restarts to close the setup network", user.c_str());
-  start_session(r, user, auth::Role::kAdmin);
+  std::string cookie;
+  start_session(r, user, auth::Role::kAdmin, cookie);
   restart_after(4000);
   return send_ok(r, true);
 }
@@ -325,7 +330,8 @@ esp_err_t post_login(httpd_req_t* r) {
     std::lock_guard<std::mutex> guard(g_lock);
     g_throttle.success(source);
   }
-  start_session(r, user, role);
+  std::string cookie;
+  start_session(r, user, role, cookie);
   return send_ok(r);
 }
 
