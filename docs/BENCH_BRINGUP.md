@@ -87,7 +87,9 @@ your network (it needs its address). Nothing about this board has been tried.
 ## 4. First start: the panel
 
 1. The console says `A.R.M.O.R. node ..., NOT SET UP YET`, and every 15 seconds where to go and the setup code (unless the image has a fleet secret: then
-   the code is the one `adopt_node.py` computes from the MAC, and the panel's set-up screen shows the MAC).
+   the code is the one `adopt_node.py` computes from the MAC, and the panel's set-up screen shows the MAC). `tools/setup_code.html`, opened directly
+   in a browser (no server, no network), does the same from just the fleet secret and the MAC - handy when several boards are being set up at once and
+   only the MAC is in hand yet.
 2. Open the address the console shows (DHCP), or join the Wi-Fi `ARMOR-SETUP-xxxxxx` (its password is the setup code) and open `http://192.168.4.1/`.
 3. Enter the setup code, choose the administrator and a password. The node restarts.
 4. Sign in. **Wi-Fi**: for the shared network give every node the same name, security and password, channel on automatic

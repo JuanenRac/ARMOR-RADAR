@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented here.
 
+## [0.4.4] - A setup-code tool with no command line
+
+- **`tools/setup_code.html`:** the fleet secret and a node's MAC in, the ten-character setup code out - the same HMAC-SHA256 the firmware and `adopt_node.py` already use, computed once by this page's own JavaScript (Web Crypto) with no server and no network request. Useful when setting up several boards from just their MAC, before any of them has network access yet.
+
 ## [0.4.3] - An eye on the login and set-up passwords
 
 - **Sign-in, the admin password and the Wi-Fi password at set-up** now have an eye button that shows what was typed - the one place a mistyped password locks someone out with no other field to check it against.

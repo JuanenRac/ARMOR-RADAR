@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<!--
+ARMOR-RADAR - the setup code of a node, from its MAC address and the fleet's own secret.
+Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
+
+A local tool, not a CLI: open this file directly in a browser (file://, no server, no network - it makes no request anywhere). The
+fleet secret is typed into this page and used only in the browser's own Web Crypto HMAC-SHA256, the same algorithm the firmware
+itself uses (main/node_store.cpp) and tools/adopt_node.py's own setup_code_for(); nothing is stored, logged or sent anywhere. Closing
+the tab forgets everything it was given.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARMOR-RADAR - node setup code</title>
+<style>
+  :root { color-scheme: dark; }
+  body { font-family: system-ui, sans-serif; background: #0b1420; color: #ecffff; max-width: 560px; margin: 2rem auto; padding: 0 1rem; }
+  h1 { font-size: 1.1rem; color: #69d9d6; }
+  p.hint { color: #7d9ca8; font-size: .82rem; line-height: 1.5; }
+  label { display: grid; gap: .25rem; margin: 1rem 0; color: #a7c4cc; font-size: .8rem; }
+  .row { display: flex; gap: .4rem; }
+  input { flex: 1; border: 1px solid #1c3542; border-radius: 7px; background: #0f1e2b; color: #ecffff; padding: .55rem .6rem; font-size: .95rem; font-family: ui-monospace, monospace; }
+  input:focus { outline: 2px solid #40cabe; }
+  button.eye { flex: 0 0 auto; border: 1px solid #1c3542; border-radius: 7px; background: #0f1e2b; color: #ecffff; padding: .5rem .7rem; cursor: pointer; }
+  .result { margin-top: 1.5rem; padding: 1rem; border: 1px solid #1c3542; border-radius: 10px; background: #0f1e2b; }
+  .code { font-family: ui-monospace, monospace; font-size: 1.6rem; letter-spacing: .15em; color: #69f0db; word-break: break-all; }
+  .err { color: #ffafb0; font-size: .82rem; min-height: 1.2em; }
+  .copy { margin-top: .6rem; }
+  button.copy-btn { border: 1px solid #1c3542; border-radius: 7px; background: #0f1e2b; color: #ecffff; padding: .4rem .7rem; cursor: pointer; font-size: .8rem; }
+  button.copy-btn:hover, button.eye:hover { border-color: #69d9d6; }
+</style>
+</head>
+<body>
+  <h1>A.R.M.O.R. - node setup code</h1>
+  <p class="hint">Enter the fleet secret (the same one in <code>secrets/generic.conf</code>, never in the repository) and a node's MAC address to get the ten-character code its own set-up screen expects - the same code <code>tools/adopt_node.py</code> would print, computed the same way (HMAC-SHA256 of the MAC with the fleet secret). This page makes no network request: the secret never leaves this browser tab, and nothing here is saved when it is closed.</p>
+
+  <label>Fleet secret
+    <div class="row">
+      <input id="secret" type="password" autocomplete="off" spellcheck="false">
+      <button class="eye" type="button" id="eye" aria-label="Show the secret">👁</button>
+    </div>
+  </label>
+
+  <label>Node's MAC address
+    <input id="mac" type="text" placeholder="aa:bb:cc:dd:ee:ff" autocomplete="off" spellcheck="false">
+  </label>
+
+  <p class="err" id="error"></p>
+
+  <div class="result" id="result" hidden>
+    <div class="hint">Setup code</div>
+    <div class="code" id="code"></div>
+    <div class="copy"><button class="copy-btn" type="button" id="copyBtn">Copy</button></div>
+  </div>
+
+<script>
+// The alphabet is 31 symbols with no look-alikes (0/O, 1/I/l), exactly as in the firmware and tools/adopt_node.py.
+const ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+
+function macDigits(mac) {
+  const digits = mac.toLowerCase().replace(/[^0-9a-f]/g, "");
+  if (digits.length !== 12) return null;
+  return digits;
+}
+
+async function setupCodeFor(secret, mac) {
+  const digits = macDigits(mac);
+  if (digits === null) return null;
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(digits));
+  const bytes = new Uint8Array(signature);
+  let code = "";
+  for (let i = 0; i < 10; ++i) code += ALPHABET[bytes[i] % 31];
+  return code;
+}
+
+const secretInput = document.getElementById("secret");
+const macInput = document.getElementById("mac");
+const errorBox = document.getElementById("error");
+const resultBox = document.getElementById("result");
+const codeBox = document.getElementById("code");
+
+async function update() {
+  errorBox.textContent = "";
+  resultBox.hidden = true;
+  const secret = secretInput.value, mac = macInput.value.trim();
+  if (!secret || !mac) return;
+  if (secret.length < 16) { errorBox.textContent = "The fleet secret should be at least 16 characters, same as the firmware requires."; return; }
+  const code = await setupCodeFor(secret, mac);
+  if (code === null) { errorBox.textContent = "That does not look like a MAC address (needs 12 hexadecimal digits)."; return; }
+  codeBox.textContent = code;
+  resultBox.hidden = false;
+}
+
+secretInput.addEventListener("input", update);
+macInput.addEventListener("input", update);
+
+document.getElementById("eye").addEventListener("click", () => {
+  secretInput.type = secretInput.type === "password" ? "text" : "password";
+});
+
+document.getElementById("copyBtn").addEventListener("click", async () => {
+  try { await navigator.clipboard.writeText(codeBox.textContent); } catch (error) { /* clipboard may be blocked; the code is still shown */ }
+});
+</script>
+</body>
+</html>
