@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented here.
 
+## [0.4.5] - Chip, flash, PSRAM and bootloader version on the Overview page
+
+- **A new "Hardware" card:** the chip and its revision, how many cores, the flash and PSRAM sizes, and the IDF version of both the running firmware and the bootloader (not the same thing - a mismatch there usually means the wrong board file was built). Read straight from the chip and the bootloader's own descriptor (`esp_ota_get_bootloader_description`), not stored anywhere. Needed `spi_flash` added to the component's own dependencies; built clean with the real toolchain.
+
 ## [0.4.4] - A setup-code tool with no command line
 
 - **`tools/setup_code.html`:** the fleet secret and a node's MAC in, the ten-character setup code out - the same HMAC-SHA256 the firmware and `adopt_node.py` already use, computed once by this page's own JavaScript (Web Crypto) with no server and no network request. Useful when setting up several boards from just their MAC, before any of them has network access yet.

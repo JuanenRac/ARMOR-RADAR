@@ -5,6 +5,8 @@
 #include <cstring>
 extern "C" {
 #include "esp_app_desc.h"
+#include "esp_chip_info.h"
+#include "esp_flash.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
@@ -23,6 +25,23 @@ namespace armor::api {
 
 
 std::string version_text() { return esp_app_get_description()->version; }
+
+// What is hard to change once a board is in a wall: the chip itself, how much flash and PSRAM it has, and the bootloader's own IDF
+// version (not the running app's, which "version" already says) - a mismatch here usually means the wrong board file was built.
+void write_hardware(json::Writer& w) {
+  esp_chip_info_t chip{};
+  esp_chip_info(&chip);
+  const char* model = chip.model == CHIP_ESP32S3 ? "esp32-s3" : chip.model == CHIP_ESP32 ? "esp32" : chip.model == CHIP_ESP32C3 ? "esp32-c3" : "?";
+  std::uint32_t flash_bytes = 0;
+  esp_flash_get_size(nullptr, &flash_bytes);
+  esp_bootloader_desc_t bootloader{};
+  const bool bootloader_known = esp_ota_get_bootloader_description(nullptr, &bootloader) == ESP_OK && bootloader.magic_byte == ESP_BOOTLOADER_DESC_MAGIC_BYTE;
+  w.key("hardware").begin_object().field("chip", model).field("chip_revision", chip.revision).field("cores", static_cast<int>(chip.cores))
+      .field("flash_mb", static_cast<int>(flash_bytes / (1024 * 1024))).field("psram_mb", static_cast<int>(heap_caps_get_total_size(MALLOC_CAP_SPIRAM) / (1024 * 1024)))
+      .field("app_idf", esp_app_get_description()->idf_ver);
+  if (bootloader_known) w.field("bootloader_idf", bootloader.idf_ver); else w.field("bootloader_idf", "?");
+  w.end_object();
+}
 
 const char* reset_reason_text() {
   switch (esp_reset_reason()) {
@@ -62,6 +81,7 @@ std::string status_json() {
   w.begin_object().field("node_id", s.node_id).field("name", s.node_name).field("version", version_text()).field("uptime_s", static_cast<long long>(esp_timer_get_time() / 1000000LL))
       .field("reset_reason", reset_reason_text()).field("heap_free", static_cast<long long>(esp_get_free_heap_size())).field("heap_min", static_cast<long long>(esp_get_minimum_free_heap_size()))
       .field("psram_free", static_cast<long long>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM))).field("partition", running != nullptr ? running->label : "?");
+  write_hardware(w);
   write_network(w);
   w.key("mqtt").begin_object().field("enabled", m.enabled).field("connected", m.connected).field("clock_set", m.clock_set).field("published", static_cast<long long>(m.published)).field("withheld", m.withheld).end_object();
   const float lux = light_lux();

@@ -4,7 +4,7 @@ set(ARMOR_SOURCES "api_shared.cpp" "app_main.cpp" "armor_radar.cpp" "ble_provisi
                   "mqtt_link.cpp" "network.cpp" "node_store.cpp" "radar_manager.cpp" "tls_cert.cpp" "web_server.cpp")
 set(ARMOR_REQUIRES driver esp_driver_gpio esp_driver_ledc esp_driver_spi esp_driver_i2c esp_driver_uart esp_adc esp_event esp_netif esp_timer
                    esp_wifi esp_http_server esp_https_server app_update esp_partition esp_app_format mbedtls bootloader_support mqtt nvs_flash lwip esp_hw_support
-                   esp_system heap log bt esp_eth)
+                   esp_system heap log bt esp_eth spi_flash)
 if(CONFIG_ARMOR_BOARD_S3_WIFI)
   set(ARMOR_BOARD_DEFINE ARMOR_BOARD_S3_WIFI=1)
 else()
