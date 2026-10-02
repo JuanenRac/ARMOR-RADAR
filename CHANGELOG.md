@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here.
 
+## [0.4.3] - An eye on the login and set-up passwords
+
+- **Sign-in, the admin password and the Wi-Fi password at set-up** now have an eye button that shows what was typed - the one place a mistyped password locks someone out with no other field to check it against.
+
+## [0.4.2] - A live top-down map of the three radars
+
+- **New "Map" page:** the node at the centre, each radar's own cone (coloured, from its calibration on the Radars page) and the targets it currently sees - the same shared-plane, already-merged positions telemetry publishes, pushed to the browser over a WebSocket (`/ws/radar-map`) a few times a second instead of being polled. Logged-in only, same session as the rest of the panel. Builds clean with the real ESP-IDF toolchain (52% of the app partition free); not yet confirmed on a physical board.
+
 ## [0.4.1] - One shared map for the three radars, and merging what both see
 
 - **Spatial calibration, per radar:** position (offset X/Y from the node's own centre) and orientation (yaw, and a downward tilt - pitch) in the panel's Sensor cards. The targets a radar reports are rotated and moved onto one shared plane before publishing, instead of three separate local ones - set all three to 0/120/240 degrees of yaw for all-round coverage, or leave everything at zero for exactly the old behaviour (nothing changes until it is set).

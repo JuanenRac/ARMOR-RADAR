@@ -199,6 +199,7 @@ const PAGES = [
   { id: "wifi", icon: "◌", label: "navWifi", group: "navNetwork" },
   { id: "broker", icon: "⌁", label: "navBroker", group: "navNetwork" },
   { id: "radars", icon: "◉", label: "navRadars", group: "navSensors" },
+  { id: "map", icon: "⊡", label: "navMap", group: "navSensors" },
   { id: "pins", icon: "▦", label: "navPins", group: "navSensors" },
   { id: "users", icon: "☺", label: "navUsers", group: "navSystem" },
   { id: "update", icon: "⟳", label: "navUpdate", group: "navSystem" },
@@ -682,7 +683,56 @@ function shell(content) {
   return view;
 }
 
-function go(id) { S.page = id; S.message = S.message && S.message.kind === "ok" ? null : S.message; location.hash = "#/" + id; }
+function go(id) {
+  if (S.page === "map" && id !== "map") closeMapSocket();
+  S.page = id; S.message = S.message && S.message.kind === "ok" ? null : S.message; location.hash = "#/" + id;
+}
+
+// A live top-down view of the three radars: the node at the centre, each radar's own cone (coloured, from its calibration above) and
+// the targets it currently sees, already placed on the shared plane (and merged where two radars see the same person) by the node
+// itself - this page only draws what the WebSocket hands it.
+let mapSocket = null, mapTargets = [];
+function closeMapSocket() { if (mapSocket) { mapSocket.onclose = null; mapSocket.close(); mapSocket = null; } mapTargets = []; }
+function openMapSocket(onFrame) {
+  if (mapSocket) return;
+  const url = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/radar-map";
+  try { mapSocket = new WebSocket(url); } catch (error) { return; }
+  mapSocket.onmessage = e => { try { mapTargets = (JSON.parse(e.data).targets) || []; } catch (error) { return; } onFrame(); };
+  mapSocket.onclose = () => { mapSocket = null; if (S.page === "map") setTimeout(() => openMapSocket(onFrame), 1500); };
+}
+
+const RADAR_COLORS = ["#e05a5a", "#4caf7d", "#4a8de0"];
+function drawRadarMap(canvas) {
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width, h = canvas.height, cx = w / 2, cy = h / 2, pxPerMm = 0.03;   // 1 px per ~33 mm: about 6.6 m across
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = "#0b1420"; ctx.fillRect(0, 0, w, h);
+  ctx.strokeStyle = "#1c2b3a"; ctx.lineWidth = 1;
+  for (let r = 1; r <= 3; ++r) { ctx.beginPath(); ctx.arc(cx, cy, r * pxPerMm * 1500, 0, Math.PI * 2); ctx.stroke(); }
+  ctx.strokeStyle = "#2a3c4e"; ctx.beginPath(); ctx.moveTo(0, cy); ctx.lineTo(w, cy); ctx.moveTo(cx, 0); ctx.lineTo(cx, h); ctx.stroke();
+  (S.cfg ? S.cfg.radars : []).forEach((radar, i) => {
+    if (!radar.enabled) return;
+    const ox = cx + radar.offset_x_mm * pxPerMm, oy = cy - radar.offset_y_mm * pxPerMm;
+    const yaw = (radar.yaw_deg - 90) * Math.PI / 180, halfFov = 60 * Math.PI / 180, reach = 60;
+    ctx.fillStyle = RADAR_COLORS[i] + "33";
+    ctx.beginPath(); ctx.moveTo(ox, oy);
+    ctx.arc(ox, oy, reach, yaw - halfFov, yaw + halfFov); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = RADAR_COLORS[i]; ctx.beginPath(); ctx.arc(ox, oy, 4, 0, Math.PI * 2); ctx.fill();
+  });
+  mapTargets.forEach(target => {
+    const x = cx + target.x_mm * pxPerMm, y = cy - target.y_mm * pxPerMm;
+    const color = RADAR_COLORS[(target.sensor_id - 1 + 3) % 3] || "#ddd";
+    ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI * 2); ctx.fill();
+    if (Math.abs(target.speed_mm_s) > 50) { ctx.fillStyle = "#fff"; ctx.font = "10px sans-serif"; ctx.fillText((target.speed_mm_s / 1000).toFixed(1) + " m/s", x + 8, y - 8); }
+  });
+}
+
+function mapPage() {
+  const canvas = el("canvas", { width: 360, height: 360, class: "radar-map" });
+  openMapSocket(() => drawRadarMap(canvas));
+  requestAnimationFrame(() => drawRadarMap(canvas));
+  return el("div", {}, card(t("mapTitle"), canvas, note(t("mapNote"), "info")));
+}
 
 function render(full = true) {
   if (S.rebooting) { $app.replaceChildren(el("div", { class: "center" }, el("div", { class: "login" }, el("h1", {}, t("restarting")), el("p", { class: "muted" }, t("loading"))))); return; }
@@ -697,6 +747,7 @@ function render(full = true) {
     case "wifi": content = wifiPage(); break;
     case "broker": content = brokerPage(); break;
     case "radars": content = radarsPage(); break;
+    case "map": content = mapPage(); break;
     case "pins": content = pinsPage(); break;
     case "users": content = usersPage(); break;
     case "update": content = updatePage(); break;
@@ -708,6 +759,15 @@ function render(full = true) {
 }
 
 // ---- login and set-up screens -----------------------------------------------------------------------------------------------------------
+
+// A password field with an eye to show what was typed - the login and set-up screens are the one place a mistyped password locks
+// someone out with no other field to cross-check it against.
+function passwordField(labelKey, inputAttrs) {
+  const input = el("input", Object.assign({ type: "password" }, inputAttrs));
+  const toggle = el("button", { type: "button", class: "eye-toggle", "aria-label": t("showPassword"),
+    onclick: () => { input.type = input.type === "password" ? "text" : "password"; toggle.textContent = input.type === "password" ? "👁" : "🙈"; } }, "👁");
+  return el("label", { class: "field" }, el("span", {}, t(labelKey)), el("div", { class: "password-row" }, input, toggle));
+}
 
 function langPicker() {
   return el("select", { "aria-label": t("language"), onchange: e => { lang = Number(e.target.value); try { localStorage.setItem("armor_lang", LANGS[lang][0]); } catch (error) { /* ignore */ } render(); } },
@@ -726,7 +786,7 @@ function loginScreen() {
   return el("div", { class: "center" }, el("form", { class: "login", onsubmit: submit },
     el("div", { class: "brand" }, el("div", { class: "brand-mark" }, "A"), el("div", {}, el("strong", {}, "A.R.M.O.R."), el("small", {}, S.session.node_id))), el("h1", {}, t("signIn")),
     el("label", { class: "field" }, el("span", {}, t("user")), el("input", { autocomplete: "username", autofocus: true, oninput: e => { form.user = e.target.value; } })),
-    el("label", { class: "field" }, el("span", {}, t("password")), el("input", { type: "password", autocomplete: "current-password", oninput: e => { form.password = e.target.value; } })),
+    passwordField("password", { autocomplete: "current-password", oninput: e => { form.password = e.target.value; } }),
     message, el("button", { class: "b primary", type: "submit" }, t("signIn")), langPicker()));
 }
 
@@ -746,11 +806,11 @@ function setupScreen() {
     S.session.mac ? el("p", { class: "hint mono" }, t("mac") + ": " + S.session.mac) : null,
     el("label", { class: "field" }, el("span", {}, t("setupCode")), el("input", { autocomplete: "off", autocapitalize: "characters", oninput: e => { form.code = e.target.value.trim().toUpperCase(); } })),
     el("label", { class: "field" }, el("span", {}, t("adminName")), el("input", { value: "admin", autocomplete: "username", oninput: e => { form.user = e.target.value; } })),
-    el("label", { class: "field" }, el("span", {}, t("newPassword")), el("input", { type: "password", autocomplete: "new-password", oninput: e => { form.password = e.target.value; } })),
+    passwordField("newPassword", { autocomplete: "new-password", oninput: e => { form.password = e.target.value; } }),
     ...(hasEthernet() ? [] : [
       el("h3", {}, t("setupWifiTitle")), el("p", { class: "hint" }, t("setupWifiHelp")),
       el("label", { class: "field" }, el("span", {}, t("ssid")), el("input", { autocomplete: "off", maxLength: 32, oninput: e => { form.wifi_ssid = e.target.value; } })),
-      el("label", { class: "field" }, el("span", {}, t("wifiPassword")), el("input", { type: "password", autocomplete: "off", oninput: e => { form.wifi_password = e.target.value; } }))]),
+      passwordField("wifiPassword", { autocomplete: "off", oninput: e => { form.wifi_password = e.target.value; } })]),
     message, el("button", { class: "b primary", type: "submit" }, t("createAdmin")), langPicker()));
 }
 

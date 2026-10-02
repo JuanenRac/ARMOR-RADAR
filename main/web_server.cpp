@@ -11,6 +11,7 @@
 #include <sys/socket.h>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <mutex>
 #include <string>
 extern "C" {
@@ -25,12 +26,15 @@ extern "C" {
 #include "esp_timer.h"
 #include "mbedtls/sha256.h"
 #include "sdkconfig.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 }
 #include "core/auth.hpp"
 #include "core/gpio_logic.hpp"
 #include "core/json.hpp"
 #include "core/web_policy.hpp"
 #include "core/ld2450_command.hpp"
+#include "core/radar_calibration.hpp"
 #include "entropy.hpp"
 #include "gpio_manager.hpp"
 #include "light_sensor.hpp"
@@ -435,6 +439,70 @@ esp_err_t get_radars(httpd_req_t* r) {
   return send_json(r, 200, api::radars_json());
 }
 
+// A live 2D map of the three radars' targets, already placed on one shared plane (core/radar_calibration.hpp) and merged where two
+// radars see the same person. The panel's own calibration fields already describe where each radar sits and points, so this only
+// needs to push the moving part: the targets themselves, a few times a second.
+constexpr int kMaxMapClients = 4;
+int g_map_clients[kMaxMapClients] = {-1, -1, -1, -1};
+std::mutex g_map_lock;
+
+esp_err_t ws_radar_map(httpd_req_t* r) {
+  if (r->method == HTTP_GET) {
+    // By the time a handler is called for a websocket URI's GET, ESP-IDF has already sent the 101 handshake response - answering with
+    // a JSON error here (require()'s usual way of saying no) would write on top of an already-upgraded connection. A silent ESP_FAIL
+    // closes it instead: no live socket for a request with no valid session.
+    if (store::users_empty() || !authenticate(r).ok) return ESP_FAIL;
+    const int fd = httpd_req_to_sockfd(r);
+    std::lock_guard<std::mutex> guard(g_map_lock);
+    for (int& slot : g_map_clients) if (slot < 0) { slot = fd; break; }
+    return ESP_OK;
+  }
+  return ESP_OK;   // the browser never sends frames of its own; nothing to read
+}
+
+void forget_map_client(int fd) {
+  std::lock_guard<std::mutex> guard(g_map_lock);
+  for (int& slot : g_map_clients) if (slot == fd) slot = -1;
+}
+
+struct MapSend { int fd; std::string* payload; };
+void send_map_frame(void* raw) {
+  std::unique_ptr<MapSend> job(static_cast<MapSend*>(raw));
+  httpd_ws_frame_t frame{};
+  frame.type = HTTPD_WS_TYPE_TEXT;
+  frame.payload = reinterpret_cast<std::uint8_t*>(job->payload->data());
+  frame.len = job->payload->size();
+  if (httpd_ws_send_frame_async(g_server, job->fd, &frame) != ESP_OK) forget_map_client(job->fd);
+  delete job->payload;
+}
+
+void radar_map_task(void*) {
+  for (;;) {
+    vTaskDelay(pdMS_TO_TICKS(200));
+    bool any_client = false;
+    { std::lock_guard<std::mutex> guard(g_map_lock); for (int fd : g_map_clients) if (fd >= 0) any_client = true; }
+    if (!any_client || g_server == nullptr) continue;
+    armor::Track tracks[armor::kMaximumTracks];
+    std::size_t count = radar::collect_tracks(tracks);
+    const config::Settings settings = store::settings();
+    armor::calibration::apply_all(tracks, count, settings.radars);
+    count = armor::calibration::merge_overlap(tracks, count, settings.fusion_merge_mm);
+    json::Writer w;
+    w.begin_object().key("targets").begin_array();
+    for (std::size_t i = 0; i < count; ++i) {
+      w.begin_object().field("sensor_id", static_cast<int>(tracks[i].sensor_id)).field("track_id", static_cast<int>(tracks[i].track_id))
+          .field("x_mm", static_cast<int>(tracks[i].x_mm)).field("y_mm", static_cast<int>(tracks[i].y_mm)).field("speed_mm_s", static_cast<int>(tracks[i].speed_mm_s)).end_object();
+    }
+    w.end_array().end_object();
+    std::lock_guard<std::mutex> guard(g_map_lock);
+    for (int fd : g_map_clients) {
+      if (fd < 0) continue;
+      MapSend* job = new MapSend{fd, new std::string(w.str())};
+      if (httpd_queue_work(g_server, send_map_frame, job) != ESP_OK) { delete job->payload; delete job; }
+    }
+  }
+}
+
 bool read_zones(const json::Value& in, ld2450cmd::ZoneFilter& filter) {
   const json::Value* zones = in.get("zones");
   if (zones == nullptr || !zones->is_object()) return false;
@@ -723,6 +791,12 @@ void register_handlers(httpd_handle_t server, bool redirect_only) {
     page.handler = page_handler;
     httpd_register_uri_handler(server, &page);
   }
+  httpd_uri_t ws{};
+  ws.uri = "/ws/radar-map";
+  ws.method = HTTP_GET;
+  ws.handler = ws_radar_map;
+  ws.is_websocket = true;
+  httpd_register_uri_handler(server, &ws);
 }
 
 void restart_now(void*) { network::disconnect_before_restart(); esp_restart(); }
@@ -790,6 +864,8 @@ bool start(const config::Settings& settings) {
   if (httpd_start(&g_server, &config) != ESP_OK) { ESP_LOGE(kTag, "the web server could not be started"); return tls_ok; }
   register_handlers(g_server, redirect && tls_ok);   // never a redirect to a server that is not there
   ESP_LOGI(kTag, "the panel is on port 80%s", redirect && tls_ok ? " (it sends the browser to HTTPS)" : "");
+  static bool map_task_started = false;
+  if (!map_task_started) { xTaskCreate(radar_map_task, "radar-map", 4096, nullptr, 2, nullptr); map_task_started = true; }
   return true;
 }
 
