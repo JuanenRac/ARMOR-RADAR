@@ -21,9 +21,11 @@ extern "C" {
 #include "esp_timer.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "sdkconfig.h"
 }
+#include "ping/ping_sock.h"
 #if !defined(ARMOR_BOARD_S3_WIFI)
 #include "board_ethernet.hpp"
 #endif
@@ -115,6 +117,64 @@ void on_eth_event(void*, esp_event_base_t, int32_t event_id, void*) {
 #endif
 
 void reconnect_station(void*) { esp_wifi_connect(); }
+
+// The station's own link: found for real on a bench, twice in a row (two different routers, nothing shared with it but the same ESP32-S3 station): the
+// radio stays "connected" (no WIFI_EVENT_STA_DISCONNECTED, the signal is good, nothing in the log says anything went wrong) but the node stops being
+// reachable - the gateway itself stops answering it - until it is reset by hand. This task notices that from the inside and forces a fresh association,
+// since nothing else here would ever find out on its own.
+constexpr int kLinkCheckEverySeconds = 20;
+constexpr int kLinkBadRoundsBeforeReconnect = 3;   // three rounds with not even one reply: about a minute of the gateway not answering
+
+struct PingRound { SemaphoreHandle_t done; uint32_t replies; };
+
+void on_link_ping_end(esp_ping_handle_t hdl, void* args) {
+  auto* round = static_cast<PingRound*>(args);
+  esp_ping_get_profile(hdl, ESP_PING_PROF_REPLY, &round->replies, sizeof(round->replies));
+  xSemaphoreGive(round->done);
+}
+
+// True when at least one of a few pings to the gateway got an answer; false only when none did (a lost packet is not an outage).
+bool gateway_answers(const esp_ip4_addr_t& gateway) {
+  PingRound round{xSemaphoreCreateBinary(), 0};
+  if (round.done == nullptr) return true;   // could not even try: do not act on a guess
+  esp_ping_config_t config = ESP_PING_DEFAULT_CONFIG();
+  config.target_addr.type = IPADDR_TYPE_V4;
+  config.target_addr.u_addr.ip4.addr = gateway.addr;   // esp_ip4_addr_t and lwIP's own ip4_addr_t are not the same type, only the same layout
+  config.count = 3;
+  config.interval_ms = 400;
+  config.timeout_ms = 1200;
+  const esp_ping_callbacks_t callbacks = {.cb_args = &round, .on_ping_success = nullptr, .on_ping_timeout = nullptr, .on_ping_end = &on_link_ping_end};
+  esp_ping_handle_t session = nullptr;
+  bool answered = true;
+  if (esp_ping_new_session(&config, &callbacks, &session) == ESP_OK) {
+    esp_ping_start(session);
+    if (xSemaphoreTake(round.done, pdMS_TO_TICKS(8000)) == pdTRUE) answered = round.replies > 0;
+    esp_ping_delete_session(session);
+  }
+  vSemaphoreDelete(round.done);
+  return answered;
+}
+
+void link_watchdog_task(void*) {
+  int bad_rounds = 0;
+  for (;;) {
+    vTaskDelay(pdMS_TO_TICKS(kLinkCheckEverySeconds * 1000));
+    bool has_ip;
+    { std::lock_guard<std::mutex> guard(g_lock); has_ip = g_status.has_ip; }
+    if (!has_ip || g_ip_netif == nullptr) { bad_rounds = 0; continue; }
+    esp_netif_ip_info_t info{};
+    if (esp_netif_get_ip_info(g_ip_netif, &info) != ESP_OK || info.gw.addr == 0) { bad_rounds = 0; continue; }
+    if (gateway_answers(info.gw)) { bad_rounds = 0; continue; }
+    bad_rounds += 1;
+    ESP_LOGW(kTag, "the gateway has not answered a single ping in %d round(s) of %d s", bad_rounds, kLinkCheckEverySeconds);
+    if (bad_rounds >= kLinkBadRoundsBeforeReconnect) {
+      ESP_LOGW(kTag, "the station looks connected but the gateway never answers: forcing a fresh association");
+      bad_rounds = 0;
+      esp_wifi_disconnect();   // the disconnect handler already schedules a reconnect a few seconds later
+    }
+  }
+}
+
 
 void on_wifi_event(void*, esp_event_base_t, int32_t event_id, void* data) {
   switch (event_id) {
@@ -396,6 +456,7 @@ bool start(const config::Settings& s, const netplan::Plan& plan) {
   if (g_eth != nullptr) ESP_ERROR_CHECK(esp_eth_start(g_eth));
 #endif
   if (plan.ap.enabled || station) { ESP_ERROR_CHECK(esp_wifi_start()); wifi_tune(plan); g_wifi_running = true; }
+  if (station) xTaskCreate(link_watchdog_task, "net-link-wd", 4096, nullptr, 2, nullptr);
   return true;
 }
 

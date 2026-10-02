@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented here.
 
+## [0.3.5] - The station notices on its own when the gateway stops answering
+
+- **A link watchdog for the Wi-Fi station:** found for real on a bench, more than once, with different routers: the radio stays "connected" (no disconnect event, a good signal, nothing in the log) but the gateway stops answering the node - and it never came back by itself until it was reset by hand. Every 20 seconds the node now pings its gateway a few times; after about a minute with not even one reply, it forces a fresh Wi-Fi association. The exact reason the gateway stops answering it is still open - this does not claim to have found it, only to recover from it without a hand reset.
+- Built with ESP-IDF 5.5.5.
+
 ## [0.3.4] - A login that actually leaves you signed in
 
 - **The session cookie was garbage:** it was built in a function's own local variable, and the HTTP server only keeps a pointer to a header's text, not a copy of it; by the time the response was really sent, that memory had already been reused for something else. The login or the first-time set-up answered "ok", but no browser ever kept a real session - re-entering the panel always looked like a fresh sign-in. The cookie is now kept alive until the response goes out.
