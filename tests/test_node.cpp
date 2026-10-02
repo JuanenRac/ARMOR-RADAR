@@ -864,9 +864,19 @@ static void test_sensor_models_in_settings() {
   config::Settings mixed = base;
   mixed.radars[0].model = "ld2461"; mixed.radars[0].baud = 9600;
   mixed.radars[1].model = "mr24hpc1"; mixed.radars[1].name = "hall";
+  mixed.radars[0].offset_x_mm = 150; mixed.radars[0].offset_y_mm = -80; mixed.radars[0].yaw_deg = 120; mixed.radars[0].pitch_deg = -10;
   const std::string stored = config::to_json(mixed, true);
   config::Settings back;
   CHECK(config::load(stored, base, back, problems) && back.radars[0].model == "ld2461" && back.radars[0].baud == 9600 && back.radars[1].model == "mr24hpc1" && back.radars[1].name == "hall" && config::to_json(back, true) == stored);
+  CHECK(back.radars[0].offset_x_mm == 150 && back.radars[0].offset_y_mm == -80 && back.radars[0].yaw_deg == 120 && back.radars[0].pitch_deg == -10);
+  problems.clear();
+  CHECK(!config::load(R"({"radars":[{"yaw_deg":200}]})", base, out, problems) && has_problem(problems, "radars.0.yaw_deg", "range"));
+  problems.clear();
+  CHECK(!config::load(R"({"radars":[{"offset_x_mm":9000}]})", base, out, problems) && has_problem(problems, "radars.0.offset_x_mm", "range"));
+  problems.clear();
+  CHECK(config::load(R"({"fusion":{"merge_mm":300}})", base, out, problems) && out.fusion_merge_mm == 300);
+  problems.clear();
+  CHECK(!config::load(R"({"fusion":{"merge_mm":3000}})", base, out, problems) && has_problem(problems, "fusion.merge_mm", "range"));
 }
 
 static void test_web_policy() {

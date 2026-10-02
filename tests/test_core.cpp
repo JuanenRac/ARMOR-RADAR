@@ -9,6 +9,7 @@
 #include "../main/core/frame_framer.hpp"
 #include "../main/core/ld2450.hpp"
 #include "../main/core/node_id.hpp"
+#include "../main/core/radar_calibration.hpp"
 #include "../main/core/radar_health.hpp"
 #include "../main/core/static_map.hpp"
 #include "../main/core/telemetry_json.hpp"
@@ -419,6 +420,44 @@ static void test_270_degree_layout() {
   CHECK(2 * half_angle - spacing == 45.0);  // and the overlap is 45 degrees
 }
 
+static void test_radar_calibration() {
+  using namespace calibration;
+  config::RadarLine zero;   // all defaults: 0 offset, 0 yaw, 0 pitch
+  const Track raw{1, 1, 1000, 500, 200};
+  const Track identity = apply(raw, zero);
+  CHECK(identity.x_mm == raw.x_mm && identity.y_mm == raw.y_mm && identity.speed_mm_s == raw.speed_mm_s);
+
+  // a 90 degree yaw turns (1000, 0) into (0, 1000) under this function's own rotation convention
+  config::RadarLine yaw90; yaw90.yaw_deg = 90;
+  const Track turned = apply(Track{1, 1, 1000, 0, 0}, yaw90);
+  CHECK(turned.x_mm == 0 && turned.y_mm == 1000);
+
+  // an offset alone is a plain translation
+  config::RadarLine offset; offset.offset_x_mm = 500; offset.offset_y_mm = -200;
+  const Track moved = apply(Track{1, 1, 100, 200, 0}, offset);
+  CHECK(moved.x_mm == 600 && moved.y_mm == 0);
+
+  // a 60 degree downward tilt foreshortens the forward distance by cos(60) = 0.5, before any rotation
+  config::RadarLine tilted; tilted.pitch_deg = 60;
+  const Track leveled = apply(Track{1, 1, 300, 1000, 0}, tilted);
+  CHECK(leveled.x_mm == 300 && leveled.y_mm == 500);
+
+  // two different radars within the threshold are the same person, averaged; the same radar never merges with itself
+  Track pair[2] = {{1, 1, 1000, 1000, 0}, {2, 1, 1100, 1000, 100}};
+  Track merged[2] = {pair[0], pair[1]};
+  CHECK(merge_overlap(merged, 2, 300) == 1);
+  CHECK(merged[0].x_mm == 1050 && merged[0].y_mm == 1000 && merged[0].speed_mm_s == 50);
+
+  Track far[2] = {{1, 1, 0, 0, 0}, {2, 1, 5000, 5000, 0}};
+  CHECK(merge_overlap(far, 2, 300) == 2);   // too far apart: kept separate
+
+  Track same_sensor[2] = {{1, 1, 1000, 1000, 0}, {1, 2, 1010, 1000, 0}};
+  CHECK(merge_overlap(same_sensor, 2, 300) == 2);   // one radar's own two targets are never "the same person"
+
+  Track off[2] = {{1, 1, 1000, 1000, 0}, {2, 1, 1010, 1000, 0}};
+  CHECK(merge_overlap(off, 2, 0) == 2);   // threshold 0: fusion is off, nothing merges
+}
+
 // Real frames captured from a node (tools/frames_to_fixture.py), when the file exists: the decoder's first check against a real module.
 static void test_real_frames_fixture() {
   std::string path = __FILE__;
@@ -460,6 +499,7 @@ int main() {
   test_veml7700();
   test_radar_health();
   test_270_degree_layout();
+  test_radar_calibration();
   test_real_frames_fixture();
   std::printf("%d checks, %d failures\n", checks, failures);
   return failures == 0 ? 0 : 1;

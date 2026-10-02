@@ -20,6 +20,7 @@ extern "C" {
 #include "core/gpio_logic.hpp"
 #include "node_store.hpp"
 #include "esp_app_desc.h"
+#include "core/radar_calibration.hpp"
 #include "core/telemetry_json.hpp"
 #include "gpio_manager.hpp"
 #include "light_sensor.hpp"
@@ -125,7 +126,10 @@ void publish_telemetry() {
   warned_about_radars = false;
   g_withheld = 0;
   armor::Track tracks[armor::kMaximumTracks];
-  const std::size_t count = radar::collect_tracks(tracks);
+  std::size_t count = radar::collect_tracks(tracks);
+  const config::Settings current = store::settings();   // calibration and fusion may have changed in the panel since the start
+  armor::calibration::apply_all(tracks, count, current.radars);
+  count = armor::calibration::merge_overlap(tracks, count, current.fusion_merge_mm);
   char topic[96];
   char payload[1600];
   std::size_t length = 0;

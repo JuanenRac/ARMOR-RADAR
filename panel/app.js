@@ -500,7 +500,15 @@ function radarCard(index) {
         field("baudRate", base + "baud", { type: "select", number: true, options: [[0, t("baudModel", model.baud)]].concat(SENSOR_BAUDS.map(b => [b, String(b)])) })),
       el("p", { class: "hint" }, t(model.tracker ? "kindTracker" : "kindPresence")),
       model.tracker ? null : el("div", { class: "row" }, field("deviceName", base + "name", { max: 24, hint: t("deviceNameHint") })),
-      el("div", { class: "row" }, field("rxPin", base + "rx", { type: "select", number: true, options: pinOptions(cfg.rx, false, base + "rx") }), field("txPin", base + "tx", { type: "select", number: true, options: pinOptions(cfg.tx, true, base + "tx") }))] : null,
+      el("div", { class: "row" }, field("rxPin", base + "rx", { type: "select", number: true, options: pinOptions(cfg.rx, false, base + "rx") }), field("txPin", base + "tx", { type: "select", number: true, options: pinOptions(cfg.tx, true, base + "tx") })),
+      model.tracker ? [
+        el("h3", {}, t("calibrationTitle")),
+        el("div", { class: "row" },
+          field("offsetX", base + "offset_x_mm", { type: "number", min: -5000, max: 5000 }),
+          field("offsetY", base + "offset_y_mm", { type: "number", min: -5000, max: 5000 }),
+          field("yawDeg", base + "yaw_deg", { type: "number", min: -180, max: 180 }),
+          field("pitchDeg", base + "pitch_deg", { type: "number", min: -45, max: 45 })),
+        note(t("calibrationNote"), "info")] : null] : null,
     status.enabled ? el("div", { class: "actions" }, statePill(status.state), el("span", { class: "muted", id: "radar-live-" + index }, liveText(status))) : null,
     status.enabled ? [
       el("p", { class: "muted", id: "radar-detail-" + index }, detailText(status)),
@@ -527,7 +535,9 @@ function radarCard(index) {
 }
 
 function radarsPage() {
-  return el("div", {}, note(t("radarWarn")), el("div", { class: "grid wide" }, [0, 1, 2].map(radarCard)));
+  return el("div", {}, note(t("radarWarn")),
+    card(t("fusionTitle"), field("mergeMm", "fusion.merge_mm", { type: "number", min: 0, max: 2000, hint: t("fusionHint") }), note(t("fusionNote"), "info")),
+    el("div", { class: "grid wide" }, [0, 1, 2].map(radarCard)));
 }
 
 // ---- users and system ------------------------------------------------------------------------------------------------------------------

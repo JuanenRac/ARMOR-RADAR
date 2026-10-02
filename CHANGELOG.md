@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here.
 
+## [0.4.1] - One shared map for the three radars, and merging what both see
+
+- **Spatial calibration, per radar:** position (offset X/Y from the node's own centre) and orientation (yaw, and a downward tilt - pitch) in the panel's Sensor cards. The targets a radar reports are rotated and moved onto one shared plane before publishing, instead of three separate local ones - set all three to 0/120/240 degrees of yaw for all-round coverage, or leave everything at zero for exactly the old behaviour (nothing changes until it is set).
+- **Merging overlapping targets:** a new "merge threshold" (Radars page, millimetres, 0 by default) - when two different radars report a target within that distance of each other on the shared plane, they are published once, at their midpoint, instead of twice. 0 keeps every radar's targets exactly as reported.
+- New settings only (`radars[].offset_x_mm/offset_y_mm/yaw_deg/pitch_deg`, `fusion.merge_mm`): a node with none of this set publishes identical telemetry to before.
+
 ## [0.4.0] - Download and load a whole configuration
 
 - **An admin can now download this node's whole configuration** (Network page, secrets included) as a .json file - the same document the flash keeps - and load one back into the form before saving. Built for setting up a batch of identical boards from a single bench node instead of retyping Wi-Fi, broker, radars and pins by hand. The node's own identity (its node ID) is never overwritten by an import: every board keeps its own. `GET /api/v1/config/export` is a new, admin-only route; loading a file changes nothing until the existing Save button is pressed.

@@ -89,6 +89,12 @@ struct RadarLine {
   std::string name;                // a presence sensor is a device of the server with this name (armor/device/<node>/<name>/state); trackers do not use it
   int rx = -1;  // the GPIO that receives the radar's TX line
   int tx = -1;  // the GPIO that sends to the radar's RX line; -1: not wired, the radar cannot be configured from the panel
+  // Where this radar sits and points, for unifying its targets with the other two on one shared plane (radar_calibration.hpp). Millimetres and
+  // degrees; a tracker left at all zeros publishes exactly what it always has (no rotation, no offset).
+  int offset_x_mm = 0;   // -5000..5000: this radar's position versus the node's own origin
+  int offset_y_mm = 0;   // -5000..5000
+  int yaw_deg = 0;       // -180..180: this radar's own heading versus the node's forward direction (0, 120, 240 for 360 degree coverage)
+  int pitch_deg = 0;     // -45..45: tilted down (positive) foreshortens the reported forward distance
 };
 
 struct Sensors {
@@ -152,6 +158,9 @@ struct Settings {
   // A periodic, unconditional restart (disconnect_before_restart() then esp_restart()), independent of any fault: 0 means never. One of
   // {0, 1, 2, 3, 4, 6, 12, 24, 48} hours (auto_restart_hours_is_valid()).
   int auto_restart_hours = 0;
+  // Two radars seeing one person at once, within this many millimetres of each other on the shared plane (radar_calibration.hpp), are
+  // published as one target instead of two. 0: off, published exactly as each radar reported it (the setting's own default).
+  int fusion_merge_mm = 0;
 };
 
 struct Problem {
@@ -338,6 +347,10 @@ inline void read_settings(const json::Value& document, Settings& s, Problems& pr
       read_text(item, "name", s.radars[i].name, 24, base + "name", problems);
       read_int(item, "rx", s.radars[i].rx, -1, board::kLastGpio, base + "rx", problems);
       read_int(item, "tx", s.radars[i].tx, -1, board::kLastGpio, base + "tx", problems);
+      read_int(item, "offset_x_mm", s.radars[i].offset_x_mm, -5000, 5000, base + "offset_x_mm", problems);
+      read_int(item, "offset_y_mm", s.radars[i].offset_y_mm, -5000, 5000, base + "offset_y_mm", problems);
+      read_int(item, "yaw_deg", s.radars[i].yaw_deg, -180, 180, base + "yaw_deg", problems);
+      read_int(item, "pitch_deg", s.radars[i].pitch_deg, -45, 45, base + "pitch_deg", problems);
     }
   }
   if (const json::Value* sensors = document.get("sensors"); sensors != nullptr && sensors->is_object()) {
@@ -382,6 +395,7 @@ inline void read_settings(const json::Value& document, Settings& s, Problems& pr
   }
   if (const json::Value* ui = document.get("ui"); ui != nullptr && ui->is_object()) read_text(*ui, "language", s.language, 4, "ui.language", problems);
   if (const json::Value* system = document.get("system"); system != nullptr && system->is_object()) read_int(*system, "auto_restart_hours", s.auto_restart_hours, 0, 48, "system.auto_restart_hours", problems);
+  if (const json::Value* fusion = document.get("fusion"); fusion != nullptr && fusion->is_object()) read_int(*fusion, "merge_mm", s.fusion_merge_mm, 0, 2000, "fusion.merge_mm", problems);
 }
 
 // ---- checking ------------------------------------------------------------------------------------------------------------------
@@ -573,7 +587,8 @@ inline std::string to_json(const Settings& s, bool secrets) {
   w.end_array();
   w.end_object();
   w.key("radars").begin_array();
-  for (const RadarLine& radar : s.radars) w.begin_object().field("enabled", radar.enabled).field("model", radar.model).field("baud", radar.baud).field("name", radar.name).field("rx", radar.rx).field("tx", radar.tx).end_object();
+  for (const RadarLine& radar : s.radars) w.begin_object().field("enabled", radar.enabled).field("model", radar.model).field("baud", radar.baud).field("name", radar.name).field("rx", radar.rx).field("tx", radar.tx)
+      .field("offset_x_mm", radar.offset_x_mm).field("offset_y_mm", radar.offset_y_mm).field("yaw_deg", radar.yaw_deg).field("pitch_deg", radar.pitch_deg).end_object();
   w.end_array();
   w.key("sensors").begin_object().field("veml7700", s.sensors.veml7700).field("sda", s.sensors.sda).field("scl", s.sensors.scl).field("lux_fallback", s.sensors.lux_fallback).end_object();
   w.key("pins").begin_array();
@@ -588,6 +603,7 @@ inline std::string to_json(const Settings& s, bool secrets) {
   w.key("web").begin_object().field("mode", to_text(s.web)).end_object();
   w.key("ui").begin_object().field("language", s.language).end_object();
   w.key("system").begin_object().field("auto_restart_hours", s.auto_restart_hours).end_object();
+  w.key("fusion").begin_object().field("merge_mm", s.fusion_merge_mm).end_object();
   w.end_object();
   return w.str();
 }
