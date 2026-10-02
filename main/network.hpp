@@ -40,6 +40,11 @@ void arm_rescue(const netplan::Plan& rescue_plan, int after_seconds);
 bool has_ip();
 Status status();
 
+// Tells the access point the station is leaving before a restart, instead of just vanishing off the air: some access points
+// get stuck for a station that never sent a real disconnect, and then need restarting themselves. Does nothing on an
+// Ethernet-only node (Wi-Fi was never started) or one that never joined a network.
+void disconnect_before_restart();
+
 // One Wi-Fi network heard by a search.
 struct ScanEntry {
   std::string ssid;

@@ -528,6 +528,14 @@ bool has_ip() {
   return g_status.has_ip;
 }
 
+void disconnect_before_restart() {
+  wifi_mode_t mode;
+  if (esp_wifi_get_mode(&mode) != ESP_OK) return;   // Wi-Fi was never started (an Ethernet-only node)
+  if (mode != WIFI_MODE_STA && mode != WIFI_MODE_APSTA) return;
+  esp_wifi_disconnect();
+  vTaskDelay(pdMS_TO_TICKS(100));   // give the deauthentication frame a moment to actually go out before the radio powers down
+}
+
 Status status() {
   Status copy;
   {

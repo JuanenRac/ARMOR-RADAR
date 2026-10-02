@@ -716,7 +716,7 @@ void register_handlers(httpd_handle_t server, bool redirect_only) {
   }
 }
 
-void restart_now(void*) { esp_restart(); }
+void restart_now(void*) { network::disconnect_before_restart(); esp_restart(); }
 }  // namespace
 
 void restart_after(unsigned delay_ms) {

@@ -2,7 +2,7 @@
   "schema_version": "1.0",
   "ecosystem": "A.R.M.O.R.",
   "name": "ARMOR-RADAR",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "role": "ESP32-S3 PoE field-node firmware",
   "stack": "ESP-IDF C++",
   "technologies": [
@@ -16,7 +16,7 @@
   "maturity": "functional",
   "family": "Field Nodes",
   "parent": "ARMOR-COMMON",
-  "native_version": "0.3.6",
+  "native_version": "0.3.7",
   "build": "idf.py build",
   "notes": "The core, the node state machine, the sensor decoders (including a real LD2450 frame) and the Wi-Fi board layer are tested on a computer: 859 checks across four host test binaries, all passing. Its emitted payloads and device states are all accepted by ARMOR-COMMON's shared contract checker. Hardware pin assignment and PoE board verification, and running on a real board, are still deliberately pending."
 }

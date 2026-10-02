@@ -67,6 +67,7 @@ void boot_button_task(void*) {
     if (held_ms >= 8000) {
       ESP_LOGW(kTag, "BOOT held for 8 s: erasing the settings and the users");
       armor::store::factory_reset();
+      armor::network::disconnect_before_restart();
       esp_restart();
     }
     vTaskDelay(pdMS_TO_TICKS(100));

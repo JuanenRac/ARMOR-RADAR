@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## [0.3.7] - A proper goodbye to the access point before restarting
+
+- **The node never told the access point it was leaving before a restart:** `esp_restart()` just cuts the radio, with no deauthentication frame sent; some access points get stuck holding the old association and need restarting themselves before the node can rejoin. It now calls `esp_wifi_disconnect()` and gives it a moment before restarting, on every restart path (the panel, a firmware update, the factory reset held on BOOT).
+- **The "Restarting..." screen never appeared after a firmware update:** `S.rebooting = true` was set without calling `render()` on that one path (the other two call it correctly) - the panel just sat on the old screen until the auto-reload kicked in on its own six seconds later. Now it shows immediately, same as the other two paths.
+- **The default HTTP header limit (512 bytes) was too small for a real browser:** a session cookie plus a modern browser's own request headers (Sec-CH-UA client hints, Accept-*) can exceed it, which the panel refused outright - a blank page saying "Header fields are too long", clearable only by wiping cookies for that address. Raised to 2048 bytes.
+- Built with ESP-IDF 5.5.5 (now also built natively on Windows, not only in the Docker container: `tools/build_node.sh` or `idf.py` directly against `C:\Espressif`'s install both produce the same image).
+
 ## [0.3.6] - The pin picker no longer offers a pin already in use
 
 - **The panel's "Pines" (and the radar RX/TX fields) listed GPIOs the node was already using:** the dropdown only hid pins reserved by the board itself, not the ones the node's own three radars or its light sensor had already claimed - choosing one still failed at save time with a conflict, but the panel should not have offered it. It now hides whichever GPIO another radar, the light sensor or another mapped pin already holds.

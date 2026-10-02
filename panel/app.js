@@ -528,7 +528,7 @@ function updatePage() {
       el("div", { class: "actions" }, el("button", { class: "b primary", disabled: !isAdmin(), onclick: () => {
         if (!file.files[0]) return;
         uploadFirmware(file.files[0], progress, label, r => {
-          if (r.ok) { result.textContent = t("updateDone", r.version); S.rebooting = true; setTimeout(() => { const wait = async () => { const q = await api("GET", "session"); if (q.ok) location.reload(); else setTimeout(wait, 2000); }; wait(); }, 6000); }
+          if (r.ok) { result.textContent = t("updateDone", r.version); S.rebooting = true; render(); setTimeout(() => { const wait = async () => { const q = await api("GET", "session"); if (q.ok) location.reload(); else setTimeout(wait, 2000); }; wait(); }, 6000); }
           else { result.textContent = errorText(r.error); result.className = "err"; }
         });
       } }, t("upload")))),
