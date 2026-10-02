@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented here.
 
+## [0.3.9] - A periodic restart the panel can turn on
+
+- **A new System setting:** "do not apply" or every 1, 2, 3, 4, 6, 12, 24 or 48 hours. It is the same clean restart as every other one (Wi-Fi told it is leaving before the radio powers down), just timed instead of triggered by a save or a firmware update - for a board nobody is going to touch for weeks. Settings-schema change only (`system.auto_restart_hours`, 0 by default): a node left at "do not apply" behaves exactly as before.
+
 ## [0.3.8] - Backup Wi-Fi networks and backup brokers
 
 - **Up to 3 backup Wi-Fi networks and 2 backup brokers**, in the panel's Wi-Fi and Broker pages: tried in order, the same way a phone or laptop remembers more than one network, only after the one above has failed to connect for about 10-15 seconds (Wi-Fi) or stayed unreachable for about 30 seconds (the broker) - never while it still works. Settings-schema change only: `sta.backup[]` and `mqtt.backup[]`, both empty by default, so a node with none configured behaves exactly as before (confirmed on real hardware: flashed, config preserved, boots clean, 0 errors, same single network as before).

@@ -163,6 +163,7 @@ static void test_settings_defaults_and_roundtrip() {
   s.sta.ssid = "home"; s.sta.password = "sta-password";
   s.sta.backup = {{"guest", "guest-password"}, {"office", "office-password"}};
   s.mqtt.backup = {{"mqtt://10.0.0.5:1883", "backup-user", "backup-password"}};
+  s.auto_restart_hours = 12;
   s.ip.dhcp = false; s.ip.address = "192.168.0.181"; s.ip.gateway = "192.168.0.1"; s.ip.dns1 = "192.168.0.1"; s.ip.hostname = "armor-1";
   config::MappedPin light; light.gpio = 39; light.name = "garden_light"; light.mode = config::PinMode::kOutput; light.invert = true; light.safe = config::SafeState::kOff; light.link_timeout_s = 60; light.pulse_ms = 800;
   config::MappedPin door; door.gpio = 40; door.name = "gate_contact"; door.mode = config::PinMode::kInput; door.pull = config::Pull::kUp; door.report = "open";
@@ -180,6 +181,7 @@ static void test_settings_defaults_and_roundtrip() {
   CHECK(back.node_id == s.node_id && back.mqtt.password == "secret-password" && back.ap.password == "wifi-secret-1" && back.sta.password == "sta-password");
   CHECK(back.sta.backup.size() == 2 && back.sta.backup[0].ssid == "guest" && back.sta.backup[0].password == "guest-password" && back.sta.backup[1].ssid == "office");
   CHECK(back.mqtt.backup.size() == 1 && back.mqtt.backup[0].uri == "mqtt://10.0.0.5:1883" && back.mqtt.backup[0].username == "backup-user" && back.mqtt.backup[0].password == "backup-password");
+  CHECK(back.auto_restart_hours == 12);
   CHECK(back.pins.size() == 3 && back.pins[0].name == "garden_light" && back.pins[0].invert && back.pins[0].safe == config::SafeState::kOff && back.pins[0].link_timeout_s == 60);
   CHECK(back.pins[1].report == "open" && back.pins[1].pull == config::Pull::kUp && back.pins[2].scale == 0.0057 && back.pins[2].offset == -0.1);
   CHECK(!back.ip.dhcp && back.ip.address == "192.168.0.181" && back.ap.channel == 6 && back.ap.hidden);
@@ -260,6 +262,9 @@ static void test_settings_rejections() {
   CHECK(rejected(R"({"mqtt":{"uri":""}})", "mqtt.uri", "required"));
   CHECK(rejected(R"({"mqtt":{"heartbeat_s":1}})", "mqtt.heartbeat_s", "range"));
   CHECK(rejected(R"({"mqtt":{"telemetry_ms":100}})", "mqtt.telemetry_ms", "range"));
+  CHECK(rejected(R"({"system":{"auto_restart_hours":5}})", "system.auto_restart_hours", "invalid"));
+  CHECK(rejected(R"({"system":{"auto_restart_hours":49}})", "system.auto_restart_hours", "range"));
+  CHECK(rejected(R"({"system":{"auto_restart_hours":-1}})", "system.auto_restart_hours", "range"));
   CHECK(rejected(R"({"radars":[{"rx":9}]})", "radars.0.rx", "reserved"));
   CHECK(rejected(R"({"radars":[{"rx":17}]})", "radars.1.rx", "conflict"));
   CHECK(rejected(R"({"radars":[{"enabled":true,"rx":-1}]})", "radars.0.rx", "required"));

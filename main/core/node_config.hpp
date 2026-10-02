@@ -149,6 +149,9 @@ struct Settings {
   BleMode ble = BleMode::kSetup;
   WebMode web = WebMode::kBoth;
   std::string language = "en";
+  // A periodic, unconditional restart (disconnect_before_restart() then esp_restart()), independent of any fault: 0 means never. One of
+  // {0, 1, 2, 3, 4, 6, 12, 24, 48} hours (auto_restart_hours_is_valid()).
+  int auto_restart_hours = 0;
 };
 
 struct Problem {
@@ -378,12 +381,18 @@ inline void read_settings(const json::Value& document, Settings& s, Problems& pr
     if (!read_choice<WebMode>(*web, "mode", {{"http", WebMode::kHttp}, {"both", WebMode::kBoth}, {"https", WebMode::kHttps}}, s.web)) bad(problems, "web.mode", "invalid");
   }
   if (const json::Value* ui = document.get("ui"); ui != nullptr && ui->is_object()) read_text(*ui, "language", s.language, 4, "ui.language", problems);
+  if (const json::Value* system = document.get("system"); system != nullptr && system->is_object()) read_int(*system, "auto_restart_hours", s.auto_restart_hours, 0, 48, "system.auto_restart_hours", problems);
 }
 
 // ---- checking ------------------------------------------------------------------------------------------------------------------
 
 inline bool language_is_known(std::string_view code) {
   for (const char* known : {"en", "es", "de", "fr", "it", "ja", "zh"}) if (code == known) return true;
+  return false;
+}
+
+inline bool auto_restart_hours_is_valid(int hours) {
+  for (const int known : {0, 1, 2, 3, 4, 6, 12, 24, 48}) if (hours == known) return true;
   return false;
 }
 
@@ -430,6 +439,7 @@ inline Problems validate(const Settings& s) {
   if (s.node_name.empty()) bad(problems, "node.name", "required");
   else if (!net::valid_utf8(s.node_name, &name_characters) || name_characters > 48) bad(problems, "node.name", "invalid");
   if (!language_is_known(s.language)) bad(problems, "ui.language", "invalid");
+  if (!auto_restart_hours_is_valid(s.auto_restart_hours)) bad(problems, "system.auto_restart_hours", "invalid");
 
   // network
   if (s.uplink == Uplink::kEthernet && !board::kHasEthernet) bad(problems, "uplink", "not_available");   // this board has no cable
@@ -577,6 +587,7 @@ inline std::string to_json(const Settings& s, bool secrets) {
   w.key("ble").begin_object().field("mode", to_text(s.ble)).end_object();
   w.key("web").begin_object().field("mode", to_text(s.web)).end_object();
   w.key("ui").begin_object().field("language", s.language).end_object();
+  w.key("system").begin_object().field("auto_restart_hours", s.auto_restart_hours).end_object();
   w.end_object();
   return w.str();
 }
