@@ -12,6 +12,9 @@ std::string version_text();
 std::string status_json();          // node, network, broker, light and radars, as the Overview page shows them
 std::string radars_json();           // the state of the three radars
 std::string config_get_json();      // {"config":{...},"channel_auto":n,"firmware":"x.y.z"}: no password ever leaves the node
+// The same document the flash keeps, secrets and all: an admin downloading the node's whole configuration to load onto an identical
+// unit (manufacturing a batch of nodes), not something the ordinary panel pages ever call.
+std::string config_export_json();
 std::string problems_json(const config::Problems& problems);   // [{"path":..,"code":..}]
 
 enum class PutResult { kSaved, kInvalid, kStorage };

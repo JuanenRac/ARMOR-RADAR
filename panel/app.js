@@ -129,6 +129,34 @@ function refreshBar() {
 
 function discard() { S.cfg = JSON.parse(S.saved); S.problems = {}; S.message = null; render(); }
 
+// Exports the stored configuration (secrets included, like the flash itself) as a .json file: cloning the Wi-Fi, broker, radars and
+// pins of a bench node onto a batch of identical ones, without retyping any of it by hand.
+async function exportConfig() {
+  const r = await api("GET", "config/export");
+  if (!r.ok) { S.message = { kind: "err", text: errorText(r.data.error) }; render(); return; }
+  const blob = new Blob([JSON.stringify(r.data.config, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = el("a", { href: url, download: "armor-" + (r.data.config.node ? r.data.config.node.id : "node") + ".json" });
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+
+// Loads a previously exported file on top of the form (not sent to the node yet): the usual Save/Save and restart bar applies it like
+// any other edit. The node keeps its own identity - node.id is never overwritten by an import.
+function importConfig(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    let parsed;
+    try { parsed = JSON.parse(String(reader.result)); } catch (error) { S.message = { kind: "err", text: t("importBadFile") }; render(); return; }
+    const keepId = S.cfg.node ? S.cfg.node.id : undefined;
+    S.cfg = Object.assign({}, S.cfg, parsed, { node: Object.assign({}, S.cfg.node, parsed.node, { id: keepId }) });
+    S.problems = {}; S.message = { kind: "warn", text: t("importLoaded") };
+    render();
+  };
+  reader.onerror = () => { S.message = { kind: "err", text: t("importBadFile") }; render(); };
+  reader.readAsText(file);
+}
+
 async function save(restartAfter) {
   S.busy = true; S.message = { kind: "warn", text: t("working") }; refreshBar();
   const r = await api("PUT", "config", S.cfg);
@@ -229,7 +257,12 @@ function networkPage() {
     card(t("bleTitle"), field("bleMode", "ble.mode", { type: "select", options: [["setup", t("bleSetup")], ["always", t("bleAlways")], ["off", t("bleOff")]] }), note(t("bleNote"), "info")),
     card(t("systemTitle"), field("autoRestart", "system.auto_restart_hours", { type: "select", number: true,
       options: [[0, t("autoRestartNever")], [1, t("autoRestart1")], [2, t("autoRestart2")], [3, t("autoRestart3")], [4, t("autoRestart4")], [6, t("autoRestart6")], [12, t("autoRestart12")], [24, t("autoRestart24")], [48, t("autoRestart48")]] }),
-      note(t("autoRestartNote"), "info")));
+      note(t("autoRestartNote"), "info")),
+    isAdmin() ? card(t("configBackupTitle"),
+      el("div", { class: "row" },
+        el("button", { class: "b", onclick: exportConfig }, t("exportConfig")),
+        el("label", { class: "b" }, t("importConfig"), el("input", { type: "file", accept: "application/json", hidden: true, onchange: e => { if (e.target.files[0]) importConfig(e.target.files[0]); e.target.value = ""; } }))),
+      note(t("configBackupNote"), "info")) : null);
 }
 
 async function scanNetworks() {

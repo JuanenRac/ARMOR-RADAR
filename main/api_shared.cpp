@@ -91,6 +91,13 @@ std::string config_get_json() {
   return w.str();
 }
 
+std::string config_export_json() {
+  const config::Settings s = store::settings();
+  json::Writer w;
+  w.begin_object().key("config").raw(config::to_json(s, true)).field("firmware", version_text()).end_object();
+  return w.str();
+}
+
 std::string problems_json(const config::Problems& problems) {
   json::Writer w;
   w.begin_array();
