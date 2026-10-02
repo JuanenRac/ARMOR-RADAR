@@ -288,8 +288,19 @@ function brokerPage() {
 function pinLabel(info) {
   return "GPIO " + info.gpio + (info.use === "caution" ? " ⚠" : info.use === "sd" ? " (microSD)" : "") + (info.on_header ? "" : " *");
 }
-function pinOptions(selected, includeNone) {
-  const assignable = S.catalog.filter(p => p.use !== "reserved");
+// Every GPIO this draft config already claims (an enabled radar's rx/tx, the light sensor's sda/scl, an enabled mapped pin),
+// except the one field at `exceptPath` - so a dropdown doesn't grey out the value it is itself showing.
+function claimedGpios(exceptPath) {
+  const used = new Set();
+  const add = (path, gpio) => { if (path !== exceptPath && gpio >= 0) used.add(gpio); };
+  S.cfg.pins.forEach((p, i) => { if (p.mode !== "disabled") add("pins." + i + ".gpio", p.gpio); });
+  S.cfg.radars.forEach((r, i) => { if (r.enabled) { add("radars." + i + ".rx", r.rx); add("radars." + i + ".tx", r.tx); } });
+  if (S.cfg.sensors.veml7700) { add("sensors.sda", S.cfg.sensors.sda); add("sensors.scl", S.cfg.sensors.scl); }
+  return used;
+}
+function pinOptions(selected, includeNone, exceptPath) {
+  const used = exceptPath !== undefined ? claimedGpios(exceptPath) : new Set();
+  const assignable = S.catalog.filter(p => p.use !== "reserved" && (p.gpio === selected || !used.has(p.gpio)));
   const list = assignable.map(p => [p.gpio, pinLabel(p)]);
   if (selected >= 0 && !assignable.some(p => p.gpio === selected)) list.unshift([selected, "GPIO " + selected]);
   return (includeNone ? [[-1, t("none")]] : []).concat(list);
@@ -311,7 +322,7 @@ function pinCard(index) {
   const modeSelect = el("select", { disabled: !isAdmin(), onchange: modeChanged },
     [["disabled", "modeDisabled"], ["input", "modeInput"], ["output", "modeOutput"], ["pwm", "modePwm"], ["adc", "modeAdc"]].map(([v, k]) => el("option", { value: v, selected: pin.mode === v }, t(k))));
   const parts = [
-    el("div", { class: "row" }, field("pinGpio", base + "gpio", { type: "select", number: true, options: pinOptions(pin.gpio, false) }), field("pinName", base + "name", { max: 24 }),
+    el("div", { class: "row" }, field("pinGpio", base + "gpio", { type: "select", number: true, options: pinOptions(pin.gpio, false, base + "gpio") }), field("pinName", base + "name", { max: 24 }),
       el("label", { class: "field" }, el("span", {}, t("pinMode")), modeSelect)),
   ];
   const mode = pin.mode;
@@ -422,7 +433,7 @@ function radarCard(index) {
         field("baudRate", base + "baud", { type: "select", number: true, options: [[0, t("baudModel", model.baud)]].concat(SENSOR_BAUDS.map(b => [b, String(b)])) })),
       el("p", { class: "hint" }, t(model.tracker ? "kindTracker" : "kindPresence")),
       model.tracker ? null : el("div", { class: "row" }, field("deviceName", base + "name", { max: 24, hint: t("deviceNameHint") })),
-      el("div", { class: "row" }, field("rxPin", base + "rx", { type: "select", number: true, options: pinOptions(cfg.rx, false) }), field("txPin", base + "tx", { type: "select", number: true, options: pinOptions(cfg.tx, true) }))] : null,
+      el("div", { class: "row" }, field("rxPin", base + "rx", { type: "select", number: true, options: pinOptions(cfg.rx, false, base + "rx") }), field("txPin", base + "tx", { type: "select", number: true, options: pinOptions(cfg.tx, true, base + "tx") }))] : null,
     status.enabled ? el("div", { class: "actions" }, statePill(status.state), el("span", { class: "muted", id: "radar-live-" + index }, liveText(status))) : null,
     status.enabled ? [
       el("p", { class: "muted", id: "radar-detail-" + index }, detailText(status)),

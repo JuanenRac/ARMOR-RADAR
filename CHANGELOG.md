@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented here.
 
+## [0.3.6] - The pin picker no longer offers a pin already in use
+
+- **The panel's "Pines" (and the radar RX/TX fields) listed GPIOs the node was already using:** the dropdown only hid pins reserved by the board itself, not the ones the node's own three radars or its light sensor had already claimed - choosing one still failed at save time with a conflict, but the panel should not have offered it. It now hides whichever GPIO another radar, the light sensor or another mapped pin already holds.
+
 ## [0.3.5] - The station notices on its own when the gateway stops answering
 
 - **A link watchdog for the Wi-Fi station:** found for real on a bench, more than once, with different routers: the radio stays "connected" (no disconnect event, a good signal, nothing in the log) but the gateway stops answering the node - and it never came back by itself until it was reset by hand. Every 20 seconds the node now pings its gateway a few times; after about a minute with not even one reply, it forces a fresh Wi-Fi association. The exact reason the gateway stops answering it is still open - this does not claim to have found it, only to recover from it without a hand reset.
