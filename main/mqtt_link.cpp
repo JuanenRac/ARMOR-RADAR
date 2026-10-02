@@ -37,14 +37,26 @@ std::atomic<bool> g_enabled{false};
 std::atomic<std::uint32_t> g_published{0};
 std::atomic<int> g_withheld{0};   // 0 nothing, 1 light, 2 radars
 
+// Which saved broker the node is trying (0: the one above, 1..: settings.mqtt.backup[index-1]). A watchdog task switches to the
+// next one, the same way main/network.cpp does for Wi-Fi, after the connection has stayed down for a while; it never touches a
+// broker that is still working.
+int g_broker_index = 0;
+
+config::Broker current_broker(const config::Settings& s, int index) {
+  if (index <= 0 || static_cast<std::size_t>(index) > s.mqtt.backup.size()) return {s.mqtt.uri, s.mqtt.username, s.mqtt.password};
+  return s.mqtt.backup[static_cast<std::size_t>(index) - 1];
+}
+int broker_count(const config::Settings& s) { return 1 + static_cast<int>(s.mqtt.backup.size()); }
+
 void publish_info();
+void start_client(const config::Broker& broker);
 
 void on_mqtt(void*, esp_event_base_t, int32_t event_id, void* data) {
   auto* event = static_cast<esp_mqtt_event_handle_t>(data);
   switch (event_id) {
     case MQTT_EVENT_CONNECTED: {
       g_connected = true;
-      ESP_LOGI(kTag, "MQTT connected to %s", g_settings.mqtt.uri.c_str());
+      ESP_LOGI(kTag, "MQTT connected to %s", current_broker(g_settings, g_broker_index).uri.c_str());
       const std::string filter = gpio::command_filter(g_settings.node_id);
       if (!filter.empty()) esp_mqtt_client_subscribe(g_client, filter.c_str(), 1);
       pins::publish_all();
@@ -139,30 +151,22 @@ void telemetry_task(void*) {
   }
 }
 
-// Waits for an address, then starts the clock and the broker connection once. The radars and the pins keep running meanwhile.
-void link_task(void*) {
-  while (!network::has_ip()) vTaskDelay(pdMS_TO_TICKS(500));
-  esp_sntp_setoperatingmode(ESP_SNTP_OPMODE_POLL);
-  esp_sntp_setservername(0, g_settings.mqtt.ntp.c_str());
-  esp_sntp_init();
+static char g_health_topic[96];
+static char g_will[128];
+std::size_t g_will_length = 0;
 
-  static char health_topic[96];
-  static char will[128];
-  std::size_t will_length = 0;
-  if (!armor::build_topic(g_settings.node_id, "health", health_topic, sizeof health_topic)) vTaskDelete(nullptr);
-  // The last will carries the node's time at connection; the server always applies an offline message, whatever its timestamp.
-  while (!clock_is_set()) vTaskDelay(pdMS_TO_TICKS(500));
-  if (armor::build_health(g_settings.node_id, wall_clock_ms(), false, will, sizeof will, will_length) != armor::JsonResult::kOk) vTaskDelete(nullptr);
-
+// Builds and starts the MQTT client for one broker (the one above, or a backup); used both at start-up and whenever the
+// watchdog switches to the next saved broker. The client this replaces, if any, must already be stopped and destroyed.
+void start_client(const config::Broker& broker) {
   esp_mqtt_client_config_t config{};
-  config.broker.address.uri = g_settings.mqtt.uri.c_str();
+  config.broker.address.uri = broker.uri.c_str();
   config.credentials.client_id = g_settings.node_id.c_str();
-  config.credentials.username = g_settings.mqtt.username.c_str();
-  config.credentials.authentication.password = g_settings.mqtt.password.c_str();
+  config.credentials.username = broker.username.c_str();
+  config.credentials.authentication.password = broker.password.c_str();
   config.session.keepalive = g_settings.mqtt.heartbeat_s * 2;
-  config.session.last_will.topic = health_topic;
-  config.session.last_will.msg = will;
-  config.session.last_will.msg_len = static_cast<int>(will_length);
+  config.session.last_will.topic = g_health_topic;
+  config.session.last_will.msg = g_will;
+  config.session.last_will.msg_len = static_cast<int>(g_will_length);
   config.session.last_will.qos = 1;
   config.session.last_will.retain = 0;
 #ifdef ARMOR_MQTT_HAS_CA  // certs/ca.pem exists: main/CMakeLists.txt embeds it
@@ -172,14 +176,54 @@ void link_task(void*) {
   g_client = esp_mqtt_client_init(&config);
   ESP_ERROR_CHECK(esp_mqtt_client_register_event(g_client, MQTT_EVENT_ANY, on_mqtt, nullptr));
   ESP_ERROR_CHECK(esp_mqtt_client_start(g_client));
+}
+
+constexpr int kBrokerCheckEverySeconds = 10;
+constexpr int kBrokerBadRoundsBeforeSwitch = 3;   // about 30 s disconnected before trying the next saved broker
+
+// The same idea as main/network.cpp's Wi-Fi link watchdog, for the broker: tried only when the connection has stayed down
+// for a while, and only when another saved broker exists - never while the one above still works.
+void broker_watchdog_task(void*) {
+  int bad_rounds = 0;
+  for (;;) {
+    vTaskDelay(pdMS_TO_TICKS(kBrokerCheckEverySeconds * 1000));
+    if (g_connected) { bad_rounds = 0; continue; }
+    const int total = broker_count(g_settings);
+    if (total <= 1) continue;
+    bad_rounds += 1;
+    if (bad_rounds < kBrokerBadRoundsBeforeSwitch) continue;
+    bad_rounds = 0;
+    g_broker_index = (g_broker_index + 1) % total;
+    const config::Broker broker = current_broker(g_settings, g_broker_index);
+    ESP_LOGW(kTag, "the broker has not answered in a while: trying the next saved one (%s)", broker.uri.c_str());
+    if (g_client != nullptr) { esp_mqtt_client_stop(g_client); esp_mqtt_client_destroy(g_client); g_client = nullptr; }
+    start_client(broker);
+  }
+}
+
+// Waits for an address, then starts the clock and the broker connection once. The radars and the pins keep running meanwhile.
+void link_task(void*) {
+  while (!network::has_ip()) vTaskDelay(pdMS_TO_TICKS(500));
+  esp_sntp_setoperatingmode(ESP_SNTP_OPMODE_POLL);
+  esp_sntp_setservername(0, g_settings.mqtt.ntp.c_str());
+  esp_sntp_init();
+
+  if (!armor::build_topic(g_settings.node_id, "health", g_health_topic, sizeof g_health_topic)) vTaskDelete(nullptr);
+  // The last will carries the node's time at connection; the server always applies an offline message, whatever its timestamp.
+  while (!clock_is_set()) vTaskDelay(pdMS_TO_TICKS(500));
+  if (armor::build_health(g_settings.node_id, wall_clock_ms(), false, g_will, sizeof g_will, g_will_length) != armor::JsonResult::kOk) vTaskDelete(nullptr);
+
+  start_client(current_broker(g_settings, g_broker_index));
   xTaskCreate(heartbeat_task, "heartbeat", 4096, nullptr, 4, nullptr);
   xTaskCreate(telemetry_task, "telemetry", 5120, nullptr, 4, nullptr);
+  xTaskCreate(broker_watchdog_task, "mqtt-link-wd", 4096, nullptr, 2, nullptr);
   vTaskDelete(nullptr);
 }
 }  // namespace
 
 void start(const config::Settings& settings) {
   g_settings = settings;
+  g_broker_index = 0;
   if (!settings.mqtt.enabled || settings.mqtt.uri.empty()) {
     ESP_LOGW(kTag, "no broker is set up: the node serves its panel and runs its radars and pins, and sends nothing");
     return;

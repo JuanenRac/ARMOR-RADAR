@@ -267,7 +267,37 @@ function wifiPage() {
     card(t("wifiSta"), field("staEnable", "sta.enabled", { type: "checkbox", rerender: true }),
       cfg.sta.enabled ? [el("div", { class: "row" }, field("ssid", "sta.ssid", { max: 32 }), field("wifiPassword", "sta.password", { type: "password" }))] : null,
       el("div", { class: "actions" }, el("button", { class: "b", disabled: !isAdmin() || S.scan.busy, onclick: scanNetworks }, t("scanNetworks"))), scanResults(),
-      el("p", { class: "hint" }, t("scanNote")), note(t("staNote"), "info")));
+      el("p", { class: "hint" }, t("scanNote")), note(t("staNote"), "info"),
+      cfg.sta.enabled ? backupNetworks() : null));
+}
+
+const MAX_BACKUP_NETWORKS = 3;
+function backupNetworks() {
+  const list = S.cfg.sta.backup;
+  return el("div", {}, el("h3", {}, t("backupNetworksTitle")), el("p", { class: "hint" }, t("backupNetworksHint")),
+    list.map((network, i) => {
+      const base = "sta.backup." + i + ".";
+      return el("div", { class: "row" }, field("ssid", base + "ssid", { max: 32 }), field("wifiPassword", base + "password", { type: "password" }),
+        el("button", { class: "b danger", disabled: !isAdmin(), onclick: () => { list.splice(i, 1); refreshBar(); render(); } }, t("removeNetwork")));
+    }),
+    isAdmin() && list.length < MAX_BACKUP_NETWORKS
+      ? el("div", { class: "actions" }, el("button", { class: "b", onclick: () => { list.push({ ssid: "", password: "" }); refreshBar(); render(); } }, t("addBackupNetwork")))
+      : null);
+}
+
+const MAX_BACKUP_BROKERS = 2;
+function backupBrokers() {
+  const list = S.cfg.mqtt.backup;
+  return el("div", {}, el("h3", {}, t("backupBrokersTitle")), el("p", { class: "hint" }, t("backupBrokersHint")),
+    list.map((broker, i) => {
+      const base = "mqtt.backup." + i + ".";
+      return el("div", {}, el("div", { class: "row" }, field("brokerUri", base + "uri", { placeholder: "mqtt://192.168.0.180:18883" }),
+        el("button", { class: "b danger", disabled: !isAdmin(), onclick: () => { list.splice(i, 1); refreshBar(); render(); } }, t("removeNetwork"))),
+        el("div", { class: "row" }, field("brokerUser", base + "username"), field("brokerPassword", base + "password", { type: "password" })));
+    }),
+    isAdmin() && list.length < MAX_BACKUP_BROKERS
+      ? el("div", { class: "actions" }, el("button", { class: "b", onclick: () => { list.push({ uri: "", username: "", password: "" }); refreshBar(); render(); } }, t("addBackupBroker")))
+      : null);
 }
 
 function brokerPage() {
@@ -276,7 +306,8 @@ function brokerPage() {
     card(t("brokerTitle"), field("brokerEnable", "mqtt.enabled", { type: "checkbox", rerender: true }),
       mq.enabled ? [field("brokerUri", "mqtt.uri", { placeholder: "mqtt://192.168.0.180:18883" }),
         el("div", { class: "row" }, field("brokerUser", "mqtt.username"), field("brokerPassword", "mqtt.password", { type: "password" })),
-        el("div", { class: "row" }, field("heartbeat", "mqtt.heartbeat_s", { type: "number", min: 2, max: 300 }), field("telemetryMs", "mqtt.telemetry_ms", { type: "number", min: 200, max: 5000, step: 100 }), field("ntp", "mqtt.ntp"))] : null,
+        el("div", { class: "row" }, field("heartbeat", "mqtt.heartbeat_s", { type: "number", min: 2, max: 300 }), field("telemetryMs", "mqtt.telemetry_ms", { type: "number", min: 200, max: 5000, step: 100 }), field("ntp", "mqtt.ntp")),
+        backupBrokers()] : null,
       note(t("brokerNote"), "info")),
     card(t("sensorsTitle"), field("veml", "sensors.veml7700", { type: "checkbox", rerender: true }),
       cfg.sensors.veml7700 ? el("div", { class: "row" }, field("sda", "sensors.sda", { type: "number", min: 0, max: 48 }), field("scl", "sensors.scl", { type: "number", min: 0, max: 48 })) : null,

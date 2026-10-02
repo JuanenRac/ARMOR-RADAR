@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented here.
 
+## [0.3.8] - Backup Wi-Fi networks and backup brokers
+
+- **Up to 3 backup Wi-Fi networks and 2 backup brokers**, in the panel's Wi-Fi and Broker pages: tried in order, the same way a phone or laptop remembers more than one network, only after the one above has failed to connect for about 10-15 seconds (Wi-Fi) or stayed unreachable for about 30 seconds (the broker) - never while it still works. Settings-schema change only: `sta.backup[]` and `mqtt.backup[]`, both empty by default, so a node with none configured behaves exactly as before (confirmed on real hardware: flashed, config preserved, boots clean, 0 errors, same single network as before).
+
 ## [0.3.7] - A proper goodbye to the access point before restarting
 
 - **The node never told the access point it was leaving before a restart:** `esp_restart()` just cuts the radio, with no deauthentication frame sent; some access points get stuck holding the old association and need restarting themselves before the node can rejoin. It now calls `esp_wifi_disconnect()` and gives it a moment before restarting, on every restart path (the panel, a firmware update, the factory reset held on BOOT).

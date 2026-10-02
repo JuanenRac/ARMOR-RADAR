@@ -58,10 +58,19 @@ struct AccessPoint {
   bool bridge = true;  // the access point joins the wired network (one network, one address range); false: its own network
 };
 
+struct Network { std::string ssid, password; };
+constexpr std::size_t kMaxBackupNetworks = 3;
+
 struct Station {
   bool enabled = false;
   std::string ssid, password;
+  // Tried in order, after the network above, whenever the current one cannot be joined for a while (main/network.cpp); never while the
+  // network above still works. The same Wi-Fi password rules apply to each.
+  std::vector<Network> backup;
 };
+
+struct Broker { std::string uri, username, password; };
+constexpr std::size_t kMaxBackupBrokers = 2;
 
 struct Mqtt {
   bool enabled = false;  // a node that was never configured has no broker yet
@@ -69,6 +78,8 @@ struct Mqtt {
   int heartbeat_s = 10;
   int telemetry_ms = 200;
   std::string ntp = "pool.ntp.org";
+  // Tried in order, after the broker above, whenever it cannot be reached for a while (main/mqtt_link.cpp); never while it still works.
+  std::vector<Broker> backup;
 };
 
 struct RadarLine {
@@ -277,6 +288,18 @@ inline void read_settings(const json::Value& document, Settings& s, Problems& pr
     read_bool(*sta, "enabled", s.sta.enabled, "sta.enabled", problems);
     read_text(*sta, "ssid", s.sta.ssid, 32, "sta.ssid", problems);
     read_secret(*sta, "password", s.sta.password, "sta.password", problems);
+    if (const json::Value* backup = sta->get("backup"); backup != nullptr) {
+      if (!backup->is_array() || backup->items.size() > kMaxBackupNetworks) bad(problems, "sta.backup", "invalid");
+      else for (std::size_t i = 0; i < backup->items.size(); ++i) {
+        const json::Value& item = backup->items[i];
+        const std::string base = "sta.backup." + std::to_string(i) + ".";
+        Network network;
+        if (!item.is_object()) { bad(problems, base + "ssid", "invalid"); continue; }
+        read_text(item, "ssid", network.ssid, 32, base + "ssid", problems);
+        read_secret(item, "password", network.password, base + "password", problems);
+        s.sta.backup.push_back(network);
+      }
+    }
   }
   if (const json::Value* mqtt = document.get("mqtt"); mqtt != nullptr && mqtt->is_object()) {
     read_bool(*mqtt, "enabled", s.mqtt.enabled, "mqtt.enabled", problems);
@@ -286,6 +309,19 @@ inline void read_settings(const json::Value& document, Settings& s, Problems& pr
     read_int(*mqtt, "heartbeat_s", s.mqtt.heartbeat_s, 2, 300, "mqtt.heartbeat_s", problems);
     read_int(*mqtt, "telemetry_ms", s.mqtt.telemetry_ms, 200, 5000, "mqtt.telemetry_ms", problems);
     read_text(*mqtt, "ntp", s.mqtt.ntp, 64, "mqtt.ntp", problems);
+    if (const json::Value* backup = mqtt->get("backup"); backup != nullptr) {
+      if (!backup->is_array() || backup->items.size() > kMaxBackupBrokers) bad(problems, "mqtt.backup", "invalid");
+      else for (std::size_t i = 0; i < backup->items.size(); ++i) {
+        const json::Value& item = backup->items[i];
+        const std::string base = "mqtt.backup." + std::to_string(i) + ".";
+        Broker broker;
+        if (!item.is_object()) { bad(problems, base + "uri", "invalid"); continue; }
+        read_text(item, "uri", broker.uri, 160, base + "uri", problems);
+        read_text(item, "username", broker.username, 64, base + "username", problems);
+        read_secret(item, "password", broker.password, base + "password", problems);
+        s.mqtt.backup.push_back(broker);
+      }
+    }
   }
   if (const json::Value* radars = document.get("radars"); radars != nullptr) {
     if (!radars->is_array() || radars->items.size() > kRadarCount) bad(problems, "radars", "invalid");
@@ -420,6 +456,12 @@ inline Problems validate(const Settings& s) {
   if (s.sta.enabled) {
     if (!net::valid_ssid(s.sta.ssid)) bad(problems, "sta.ssid", s.sta.ssid.empty() ? "required" : "invalid");
     if (!s.sta.password.empty() && !net::valid_wpa_passphrase(s.sta.password)) bad(problems, "sta.password", "invalid_key");
+    for (std::size_t i = 0; i < s.sta.backup.size(); ++i) {
+      const std::string base = "sta.backup." + std::to_string(i) + ".";
+      const Network& network = s.sta.backup[i];
+      if (!net::valid_ssid(network.ssid)) bad(problems, base + "ssid", network.ssid.empty() ? "required" : "invalid");
+      if (!network.password.empty() && !net::valid_wpa_passphrase(network.password)) bad(problems, base + "password", "invalid_key");
+    }
   }
   if (s.uplink == Uplink::kWifi && !s.sta.enabled) bad(problems, "sta.enabled", "required");
 
@@ -428,6 +470,10 @@ inline Problems validate(const Settings& s) {
     if (s.mqtt.uri.empty()) bad(problems, "mqtt.uri", "required");
     else if (!broker_uri_is_valid(s.mqtt.uri)) bad(problems, "mqtt.uri", "invalid");
     if (!net::valid_host(s.mqtt.ntp)) bad(problems, "mqtt.ntp", "invalid");
+    for (std::size_t i = 0; i < s.mqtt.backup.size(); ++i) {
+      const std::string base = "mqtt.backup." + std::to_string(i) + ".";
+      if (!broker_uri_is_valid(s.mqtt.backup[i].uri)) bad(problems, base + "uri", s.mqtt.backup[i].uri.empty() ? "required" : "invalid");
+    }
   }
 
   // pins: the radars, the light sensor and the mapped pins may not share a GPIO, and none may be a reserved one
@@ -497,10 +543,25 @@ inline std::string to_json(const Settings& s, bool secrets) {
       .field("bandwidth_mhz", s.ap.bandwidth_mhz).field("country", s.ap.country).field("bridge", s.ap.bridge).end_object();
   w.key("sta").begin_object().field("enabled", s.sta.enabled).field("ssid", s.sta.ssid);
   if (secrets) w.field("password", s.sta.password); else w.field("password_set", !s.sta.password.empty());
+  w.key("backup").begin_array();
+  for (const Network& network : s.sta.backup) {
+    w.begin_object().field("ssid", network.ssid);
+    if (secrets) w.field("password", network.password); else w.field("password_set", !network.password.empty());
+    w.end_object();
+  }
+  w.end_array();
   w.end_object();
   w.key("mqtt").begin_object().field("enabled", s.mqtt.enabled).field("uri", s.mqtt.uri).field("username", s.mqtt.username);
   if (secrets) w.field("password", s.mqtt.password); else w.field("password_set", !s.mqtt.password.empty());
-  w.field("heartbeat_s", s.mqtt.heartbeat_s).field("telemetry_ms", s.mqtt.telemetry_ms).field("ntp", s.mqtt.ntp).end_object();
+  w.field("heartbeat_s", s.mqtt.heartbeat_s).field("telemetry_ms", s.mqtt.telemetry_ms).field("ntp", s.mqtt.ntp);
+  w.key("backup").begin_array();
+  for (const Broker& broker : s.mqtt.backup) {
+    w.begin_object().field("uri", broker.uri).field("username", broker.username);
+    if (secrets) w.field("password", broker.password); else w.field("password_set", !broker.password.empty());
+    w.end_object();
+  }
+  w.end_array();
+  w.end_object();
   w.key("radars").begin_array();
   for (const RadarLine& radar : s.radars) w.begin_object().field("enabled", radar.enabled).field("model", radar.model).field("baud", radar.baud).field("name", radar.name).field("rx", radar.rx).field("tx", radar.tx).end_object();
   w.end_array();
