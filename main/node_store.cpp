@@ -103,7 +103,10 @@ void init() {
     config::Settings loaded;
     config::Problems problems;
     if (config::load(text, first_settings(), loaded, problems)) { g_settings = loaded; g_stored = true; }
-    else ESP_LOGE(kTag, "the stored settings are not valid (%s at %s): using the first settings", problems.empty() ? "?" : problems[0].code.c_str(), problems.empty() ? "" : problems[0].path.c_str());
+    else {
+      ESP_LOGE(kTag, "the stored settings are not valid: using the first settings");
+      for (const config::Problem& problem : problems) ESP_LOGE(kTag, "  %s at %s", problem.code.c_str(), problem.path.c_str());
+    }
   }
   if (read_blob(kUsersKey, text) && !g_users.from_json(text)) ESP_LOGE(kTag, "the stored users could not be read: the node is back in setup");
   if (g_users.empty()) {

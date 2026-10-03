@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented here.
 
+## [0.4.8] - A bad backup list no longer costs the whole configuration
+
+- **Real bug, reported by the user:** after a plain restart (no save involved), the panel came up with every setting back to its defaults - broker, radars, everything. The cause: a stored `sta.backup` list with more entries than the panel allows (likely left over from early testing, before this limit existed) failed validation, and a single invalid field anywhere in the stored document discarded the entire thing.
+- **Fixed where it is wrong:** more backup Wi-Fi networks or brokers than fit (3 and 2) now just lose the extras past the limit - the rest of the node's settings load normally. Boot now also logs every problem found, not only the first, for a case like this to be diagnosed without guessing.
+
+## [0.4.7] - About and Help pages
+
+- **About:** the node's own identity, firmware version, author and licence - what Studio's own About dialog already shows, adapted for a node's panel.
+- **Help:** a tabbed page explaining each part of the menu (Overview, Network, Wi-Fi, Broker, Radars, Map, Pins, Users, Firmware and log) in plain language, in all seven languages - the same structure as Studio's own Help window.
+
 ## [0.4.6] - Updating from GitHub, and staying signed in
 
 - **Check GitHub for a new version** (Update page): next to the existing manual upload, an admin can check the project's own GitHub releases and install the standalone app image in one step - never the "-complete" image, which has the bootloader too. The manual upload still works exactly as before, for a node with no reason to reach the Internet.

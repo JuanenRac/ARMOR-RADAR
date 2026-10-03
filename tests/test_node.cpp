@@ -252,9 +252,22 @@ static void test_settings_rejections() {
   CHECK(rejected(R"({"ap":{"channel":1.5}})", "ap.channel", "range"));
   CHECK(rejected(R"({"uplink":"wifi"})", "sta.enabled", "required"));
   CHECK(rejected(R"({"sta":{"enabled":true,"ssid":"home","password":"short"}})", "sta.password", "invalid_key"));
-  CHECK(rejected(R"({"sta":{"enabled":true,"ssid":"home","backup":[{"ssid":""},{"ssid":"b"},{"ssid":"c"},{"ssid":"d"}]}})", "sta.backup", "invalid"));
+  // More backup networks than fit: the extras are dropped, not the whole document (a stored list from an older or looser build must
+  // never cost the rest of the settings - the node's own broker and radars have nothing to do with how many backups it once had).
+  {
+    config::Settings extra_backups;
+    config::Problems extra_problems;
+    CHECK(config::load(R"({"sta":{"enabled":true,"ssid":"home","backup":[{"ssid":"a"},{"ssid":"b"},{"ssid":"c"},{"ssid":"d"}]}})", base, extra_backups, extra_problems) && extra_problems.empty() && extra_backups.sta.backup.size() == 3);
+  }
+  CHECK(rejected(R"({"sta":{"enabled":true,"ssid":"home","backup":"not-an-array"}})", "sta.backup", "invalid"));
   CHECK(rejected(R"({"sta":{"enabled":true,"ssid":"home","backup":[{"ssid":""}]}})", "sta.backup.0.ssid", "required"));
   CHECK(rejected(R"({"sta":{"enabled":true,"ssid":"home","backup":[{"ssid":"guest","password":"short"}]}})", "sta.backup.0.password", "invalid_key"));
+  {
+    config::Settings extra_brokers;
+    config::Problems extra_problems;
+    CHECK(config::load(R"({"mqtt":{"backup":[{"uri":"mqtt://a"},{"uri":"mqtt://b"},{"uri":"mqtt://c"}]}})", base, extra_brokers, extra_problems) && extra_problems.empty() && extra_brokers.mqtt.backup.size() == 2);
+  }
+  CHECK(rejected(R"({"mqtt":{"backup":"not-an-array"}})", "mqtt.backup", "invalid"));
   CHECK(rejected(R"({"mqtt":{"enabled":true,"uri":"mqtt://10.0.0.1","backup":[{"uri":""}]}})", "mqtt.backup.0.uri", "required"));
   CHECK(rejected(R"({"mqtt":{"enabled":true,"uri":"mqtt://10.0.0.1","backup":[{"uri":"not-a-broker"}]}})", "mqtt.backup.0.uri", "invalid"));
   CHECK(rejected(R"({"mqtt":{"uri":"http://x"}})", "mqtt.uri", "invalid"));

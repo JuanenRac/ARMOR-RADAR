@@ -301,8 +301,10 @@ inline void read_settings(const json::Value& document, Settings& s, Problems& pr
     read_text(*sta, "ssid", s.sta.ssid, 32, "sta.ssid", problems);
     read_secret(*sta, "password", s.sta.password, "sta.password", problems);
     if (const json::Value* backup = sta->get("backup"); backup != nullptr) {
-      if (!backup->is_array() || backup->items.size() > kMaxBackupNetworks) bad(problems, "sta.backup", "invalid");
-      else for (std::size_t i = 0; i < backup->items.size(); ++i) {
+      if (!backup->is_array()) bad(problems, "sta.backup", "invalid");
+      // More than fit is never fatal: an older or hand-edited document with extra entries loses only the ones past the limit, not the
+      // whole node (a broker and a radar line have nothing to do with how many backup networks were once saved).
+      else for (std::size_t i = 0; i < backup->items.size() && i < kMaxBackupNetworks; ++i) {
         const json::Value& item = backup->items[i];
         const std::string base = "sta.backup." + std::to_string(i) + ".";
         Network network;
@@ -322,8 +324,9 @@ inline void read_settings(const json::Value& document, Settings& s, Problems& pr
     read_int(*mqtt, "telemetry_ms", s.mqtt.telemetry_ms, 200, 5000, "mqtt.telemetry_ms", problems);
     read_text(*mqtt, "ntp", s.mqtt.ntp, 64, "mqtt.ntp", problems);
     if (const json::Value* backup = mqtt->get("backup"); backup != nullptr) {
-      if (!backup->is_array() || backup->items.size() > kMaxBackupBrokers) bad(problems, "mqtt.backup", "invalid");
-      else for (std::size_t i = 0; i < backup->items.size(); ++i) {
+      if (!backup->is_array()) bad(problems, "mqtt.backup", "invalid");
+      // Same as sta.backup above: more entries than fit just lose the extras, not the rest of the node's settings.
+      else for (std::size_t i = 0; i < backup->items.size() && i < kMaxBackupBrokers; ++i) {
         const json::Value& item = backup->items[i];
         const std::string base = "mqtt.backup." + std::to_string(i) + ".";
         Broker broker;

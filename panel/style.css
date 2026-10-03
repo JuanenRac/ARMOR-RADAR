@@ -37,6 +37,12 @@ code, .mono { font-family: var(--mono); }
 main { padding: 1rem 1.2rem 5rem; min-width: 0; }
 .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; padding-bottom: .9rem; border-bottom: 1px solid var(--line-soft); margin-bottom: 1rem; }
 .eyebrow { margin: 0 0 .35rem; font: 500 .62rem var(--mono); letter-spacing: .14em; color: #65dce6; text-transform: uppercase; }
+.help { display: flex; gap: .9rem; align-items: start; }
+.help-nav { display: flex; flex-direction: column; gap: .2rem; flex: 0 0 180px; }
+.help-nav button { text-align: left; border: none; background: none; color: #a7c4cc; padding: .5rem .6rem; border-radius: 7px; font-size: .8rem; cursor: pointer; }
+.help-nav button:hover { background: var(--field); }
+.help-nav button.active { background: var(--button); color: #d9f6fb; font-weight: 600; }
+.help .card { flex: 1; }
 .top h1 { font-size: clamp(1.4rem, 3vw, 2.1rem); }
 .pills { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; font: 500 .68rem var(--mono); color: #8ca9b4; }
 .pill { display: inline-block; font: 500 .7rem var(--mono); padding: .42rem .6rem; border: 1px solid var(--line); border-radius: 8px; letter-spacing: .06em; background: rgba(7, 23, 32, .8); }
