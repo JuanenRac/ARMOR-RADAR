@@ -11,6 +11,7 @@
 #include "../main/core/node_id.hpp"
 #include "../main/core/radar_calibration.hpp"
 #include "../main/core/radar_health.hpp"
+#include "../main/core/semver.hpp"
 #include "../main/core/static_map.hpp"
 #include "../main/core/telemetry_json.hpp"
 #include "../main/core/veml7700.hpp"
@@ -458,6 +459,20 @@ static void test_radar_calibration() {
   CHECK(merge_overlap(off, 2, 0) == 2);   // threshold 0: fusion is off, nothing merges
 }
 
+static void test_semver() {
+  using namespace semver;
+  CHECK(is_newer("v0.4.6", "0.4.5"));
+  CHECK(is_newer("0.5.0", "0.4.9"));
+  CHECK(is_newer("1.0.0", "0.4.5"));
+  CHECK(!is_newer("0.4.5", "0.4.5"));
+  CHECK(!is_newer("0.4.4", "0.4.5"));
+  CHECK(!is_newer("0.4.6-rc1", "0.4.5"));   // a pre-release is never offered
+  CHECK(!is_newer("not-a-version", "0.4.5"));
+  CHECK(!is_newer("0.4.6", "also-not-a-version"));
+  CHECK(!parse("").ok && !parse("1.2").ok && !parse("1.2.3.4").ok && !parse("1.2.x").ok);
+  CHECK(parse("v2.10.3").ok && parse("v2.10.3").major == 2 && parse("v2.10.3").minor == 10 && parse("v2.10.3").patch == 3);
+}
+
 // Real frames captured from a node (tools/frames_to_fixture.py), when the file exists: the decoder's first check against a real module.
 static void test_real_frames_fixture() {
   std::string path = __FILE__;
@@ -500,6 +515,7 @@ int main() {
   test_radar_health();
   test_270_degree_layout();
   test_radar_calibration();
+  test_semver();
   test_real_frames_fixture();
   std::printf("%d checks, %d failures\n", checks, failures);
   return failures == 0 ? 0 : 1;

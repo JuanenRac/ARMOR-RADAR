@@ -41,6 +41,7 @@ extern "C" {
 #include "log_buffer.hpp"
 #include "mqtt_link.hpp"
 #include "api_shared.hpp"
+#include "github_update.hpp"
 #include "network.hpp"
 #include "node_store.hpp"
 #include "radar_manager.hpp"
@@ -227,15 +228,16 @@ bool require(httpd_req_t* r, Who& who, bool admin, bool writes) {
 // sent - which happens back in the caller, after this function has returned. The cookie is therefore written into a string the CALLER owns
 // (cookie_out), not one of this function's own locals (one was tried first: the cookie came out as a few bytes of whatever used that stack
 // slot next - the login looked to succeed but no browser ever kept a session, found for real on a radar node's own panel).
-void start_session(httpd_req_t* r, const std::string& user, auth::Role role, std::string& cookie_out) {
+void start_session(httpd_req_t* r, const std::string& user, auth::Role role, std::string& cookie_out, bool remember = false) {
   std::uint8_t bytes[24];
   random_bytes(bytes, sizeof bytes);
   const std::string token = auth::to_hex(bytes, sizeof bytes);
   {
     std::lock_guard<std::mutex> guard(g_lock);
-    g_sessions.create(token, user, role, now_ms());
+    g_sessions.create(token, user, role, now_ms(), remember);
   }
-  cookie_out = std::string(kCookie) + "=" + token + "; " + webpolicy::cookie_attributes(is_tls(r), 1800);
+  const int max_age = remember ? 30 * 24 * 3600 : 1800;
+  cookie_out = std::string(kCookie) + "=" + token + "; " + webpolicy::cookie_attributes(is_tls(r), max_age);
   httpd_resp_set_hdr(r, "Set-Cookie", cookie_out.c_str());
 }
 
@@ -335,7 +337,7 @@ esp_err_t post_login(httpd_req_t* r) {
     g_throttle.success(source);
   }
   std::string cookie;
-  start_session(r, user, role, cookie);
+  start_session(r, user, role, cookie, in.bool_or("remember", false));
   return send_ok(r);
 }
 
@@ -709,6 +711,34 @@ esp_err_t post_ota(httpd_req_t* r) {
   return send_json(r, 200, w.str());
 }
 
+// The GitHub counterpart of post_ota(): checking for a release, and installing it, next to (never instead of) the manual upload above.
+esp_err_t get_ota_check(httpd_req_t* r) {
+  Who who;
+  if (!require(r, who, true, false)) return ESP_OK;
+  const github_update::CheckResult result = github_update::check();
+  json::Writer w;
+  w.begin_object().field("ok", result.ok);
+  if (result.ok) w.field("current_version", esp_app_get_description()->version).field("latest_version", result.latest_version).field("update_available", result.update_available);
+  else w.field("error", result.error);
+  w.end_object();
+  return send_json(r, 200, w.str());
+}
+
+esp_err_t post_ota_install(httpd_req_t* r) {
+  Who who;
+  if (!require(r, who, true, true)) return ESP_OK;
+  const github_update::CheckResult checked = github_update::check();
+  if (!checked.ok) return send_error(r, 502, checked.error.c_str());
+  if (checked.asset_url.empty()) return send_error(r, 404, "no_asset");
+  const github_update::InstallResult installed = github_update::install(checked.asset_url);
+  if (!installed.ok) return send_error(r, 500, installed.error.c_str());
+  ESP_LOGW(kTag, "firmware %s (%u bytes) installed from GitHub by \"%s\"; restarting", installed.version.c_str(), static_cast<unsigned>(installed.bytes), who.user.c_str());
+  json::Writer w;
+  w.begin_object().field("ok", true).field("restart_required", true).field("version", installed.version).field("bytes", static_cast<long long>(installed.bytes)).end_object();
+  restart_after(2000);
+  return send_json(r, 200, w.str());
+}
+
 // ---- dispatch -----------------------------------------------------------------------------------------------------------------------
 
 esp_err_t api_handler(httpd_req_t* r) {
@@ -728,6 +758,7 @@ esp_err_t api_handler(httpd_req_t* r) {
     if (route == "radars") return get_radars(r);
     if (route == "users") return get_users(r);
     if (route == "log") return get_log(r);
+    if (route == "ota/check") return get_ota_check(r);
   } else if (method == HTTP_POST) {
     if (route == "setup") return post_setup(r);
     if (route == "login") return post_login(r);
@@ -738,6 +769,7 @@ esp_err_t api_handler(httpd_req_t* r) {
     if (route == "reboot") return post_reboot(r);
     if (route == "factory-reset") return post_factory_reset(r);
     if (route == "ota") return post_ota(r);
+    if (route == "ota/install") return post_ota_install(r);
   } else if (method == HTTP_PUT) {
     if (route == "config") return put_config(r);
     if (route == "account") return put_account(r);

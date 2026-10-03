@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here.
 
+## [0.4.6] - Updating from GitHub, and staying signed in
+
+- **Check GitHub for a new version** (Update page): next to the existing manual upload, an admin can check the project's own GitHub releases and install the standalone app image in one step - never the "-complete" image, which has the bootloader too. The manual upload still works exactly as before, for a node with no reason to reach the Internet.
+- **"Keep me signed in on this browser"** at login: unchecked, nothing changes (30 minutes idle still signs out); checked, the session survives closing the browser and lasts 30 days of actual use.
+- Built and linked clean with the real toolchain (49% of the app partition free).
+
 ## [0.4.5] - Chip, flash, PSRAM and bootloader version on the Overview page
 
 - **A new "Hardware" card:** the chip and its revision, how many cores, the flash and PSRAM sizes, and the IDF version of both the running firmware and the bootloader (not the same thing - a mismatch there usually means the wrong board file was built). Read straight from the chip and the bootloader's own descriptor (`esp_ota_get_bootloader_description`), not stored anywhere. Needed `spi_flash` added to the component's own dependencies; built clean with the real toolchain.

@@ -454,6 +454,11 @@ static void test_sessions() {
   // idle for longer than the limit ends it; using it before then extends it
   CHECK(table.touch(token, 2000 + auth::kSessionIdleMs - 1) != nullptr);
   CHECK(table.touch(token, 2000 + auth::kSessionIdleMs - 1 + auth::kSessionIdleMs + 1) == nullptr);
+  // "remember me": a session survives well past the ordinary idle limit, but not forever
+  table.create(token, "admin", auth::Role::kAdmin, 3000, true);
+  CHECK(table.touch(token, 3000 + auth::kSessionIdleMs + 1) != nullptr);
+  table.create(token, "admin", auth::Role::kAdmin, 3000, true);
+  CHECK(table.touch(token, 3000 + auth::kRememberedIdleMs + 1) == nullptr);
   table.create(token, "admin", auth::Role::kAdmin, 5000);
   table.end(token);
   CHECK(table.touch(token, 5001) == nullptr);

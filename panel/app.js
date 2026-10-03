@@ -34,6 +34,7 @@ function el(tag, attrs, ...kids) {
 const S = {
   session: null, cfg: null, saved: "", channelAuto: 1, firmware: "", status: null, catalog: [], live: [], radars: [], users: [],
   page: "overview", problems: {}, message: null, restartNeeded: false, radarInfo: {}, zones: {}, scan: { busy: false, list: null, error: "" }, log: { next: 0, text: "" }, busy: false, rebooting: false,
+  github: { busy: false, checked: false, available: false, latest: "", error: "", installing: false },
 };
 const isAdmin = () => S.session && S.session.role === "admin";
 
@@ -597,6 +598,21 @@ function uploadFirmware(file, progressBar, label, done) {
   request.send(file);
 }
 
+async function githubCheck() {
+  S.github.busy = true; S.github.error = ""; render();
+  const r = await api("GET", "ota/check");
+  S.github.busy = false;
+  if (r.ok && r.data.ok) { S.github.checked = true; S.github.available = r.data.update_available; S.github.latest = r.data.latest_version; }
+  else { S.github.checked = true; S.github.available = false; S.github.error = errorText((r.data && r.data.error) || "network"); }
+  render();
+}
+async function githubInstall() {
+  S.github.installing = true; render();
+  const r = await api("POST", "ota/install");
+  if (r.ok) { S.rebooting = true; render(); setTimeout(() => { const wait = async () => { const q = await api("GET", "session"); if (q.ok) location.reload(); else setTimeout(wait, 2000); }; wait(); }, 6000); }
+  else { S.github.installing = false; S.github.error = errorText(r.data.error); render(); }
+}
+
 function updatePage() {
   const s = S.status;
   const progress = el("i"), label = el("p", { class: "muted" }), file = el("input", { type: "file", accept: ".bin" });
@@ -613,6 +629,12 @@ function updatePage() {
           else { result.textContent = errorText(r.error); result.className = "err"; }
         });
       } }, t("upload")))),
+    card(t("githubUpdateTitle"),
+      el("div", { class: "actions" }, el("button", { class: "b", disabled: !isAdmin() || S.github.busy, onclick: githubCheck }, S.github.busy ? t("checking") : t("checkGithub"))),
+      S.github.checked && !S.github.error ? el("p", { class: "muted" }, S.github.available ? t("githubAvailable", S.github.latest) : t("githubUpToDate")) : null,
+      S.github.error ? el("p", { class: "err" }, S.github.error) : null,
+      S.github.available ? el("div", { class: "actions" }, el("button", { class: "b danger", disabled: !isAdmin() || S.github.installing, onclick: githubInstall }, S.github.installing ? t("installing") : t("installUpdate"))) : null,
+      note(t("githubUpdateNote"), "info")),
     card(t("maintenance"), el("div", { class: "actions" }, el("button", { class: "b", disabled: !isAdmin(), onclick: () => confirm(t("confirmAsk")) && reboot() }, t("rebootNode"))),
       el("h3", {}, t("factoryTitle")), el("p", { class: "muted" }, t("factoryHelp")),
       el("div", { class: "actions" }, confirmBox, el("button", { class: "b danger", disabled: !isAdmin(), onclick: async () => {
@@ -778,7 +800,7 @@ function langPicker() {
 }
 
 function loginScreen() {
-  const form = { user: "", password: "" };
+  const form = { user: "", password: "", remember: false };
   const message = el("p", { class: "err" });
   const submit = async e => {
     e.preventDefault();
@@ -790,6 +812,7 @@ function loginScreen() {
     el("div", { class: "brand" }, el("div", { class: "brand-mark" }, "A"), el("div", {}, el("strong", {}, "A.R.M.O.R."), el("small", {}, S.session.node_id))), el("h1", {}, t("signIn")),
     el("label", { class: "field" }, el("span", {}, t("user")), el("input", { autocomplete: "username", autofocus: true, oninput: e => { form.user = e.target.value; } })),
     passwordField("password", { autocomplete: "current-password", oninput: e => { form.password = e.target.value; } }),
+    el("label", { class: "check" }, el("input", { type: "checkbox", onchange: e => { form.remember = e.target.checked; } }), t("rememberMe")),
     message, el("button", { class: "b primary", type: "submit" }, t("signIn")), langPicker()));
 }
 

@@ -1,9 +1,9 @@
 # The board profile (Kconfig, sdkconfig.board.<board>): the W5500 driver file is built only for the s3-eth board. The REQUIRES cannot depend on it: ESP-IDF reads them
 # before sdkconfig is loaded, so esp_eth is always required (an unused component costs nothing in the image).
-set(ARMOR_SOURCES "api_shared.cpp" "app_main.cpp" "armor_radar.cpp" "ble_provision.cpp" "entropy.cpp" "gpio_manager.cpp" "light_sensor.cpp" "log_buffer.cpp"
+set(ARMOR_SOURCES "api_shared.cpp" "app_main.cpp" "armor_radar.cpp" "ble_provision.cpp" "entropy.cpp" "github_update.cpp" "gpio_manager.cpp" "light_sensor.cpp" "log_buffer.cpp"
                   "mqtt_link.cpp" "network.cpp" "node_store.cpp" "radar_manager.cpp" "tls_cert.cpp" "web_server.cpp")
 set(ARMOR_REQUIRES driver esp_driver_gpio esp_driver_ledc esp_driver_spi esp_driver_i2c esp_driver_uart esp_adc esp_event esp_netif esp_timer
-                   esp_wifi esp_http_server esp_https_server app_update esp_partition esp_app_format mbedtls bootloader_support mqtt nvs_flash lwip esp_hw_support
+                   esp_wifi esp_http_server esp_https_server esp_http_client esp-tls app_update esp_partition esp_app_format mbedtls bootloader_support mqtt nvs_flash lwip esp_hw_support
                    esp_system heap log bt esp_eth spi_flash)
 if(CONFIG_ARMOR_BOARD_S3_WIFI)
   set(ARMOR_BOARD_DEFINE ARMOR_BOARD_S3_WIFI=1)

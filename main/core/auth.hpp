@@ -164,6 +164,9 @@ class UserStore {
 
 constexpr std::size_t kMaxSessions = 6;
 constexpr std::uint64_t kSessionIdleMs = 30ULL * 60ULL * 1000ULL;
+// "Remember me" at login: a session that survives the browser closing (a long-lived cookie) also gets a long idle allowance here, or
+// the cookie would outlive the server-side session it names and the panel would still ask to sign in again after 30 minutes away.
+constexpr std::uint64_t kRememberedIdleMs = 30ULL * 24ULL * 60ULL * 60ULL * 1000ULL;
 
 struct Session {
   std::string token;  // random, hexadecimal; created by the caller
@@ -171,23 +174,25 @@ struct Session {
   Role role = Role::kViewer;
   std::uint64_t last_seen_ms = 0;
   bool used = false;
+  bool remembered = false;
 };
 
 class SessionTable {
  public:
   // Starts a session; when the table is full the one idle the longest is replaced.
-  void create(std::string token, std::string user, Role role, std::uint64_t now_ms) {
+  void create(std::string token, std::string user, Role role, std::uint64_t now_ms, bool remembered = false) {
     Session* slot = nullptr;
     for (Session& session : sessions_) if (!session.used || now_ms - session.last_seen_ms > kSessionIdleMs) { slot = &session; break; }
     if (slot == nullptr) slot = &*std::min_element(sessions_.begin(), sessions_.end(), [](const Session& a, const Session& b) { return a.last_seen_ms < b.last_seen_ms; });
-    *slot = {std::move(token), std::move(user), role, now_ms, true};
+    *slot = {std::move(token), std::move(user), role, now_ms, true, remembered};
   }
   // The session for a token, refreshed; nullptr when there is none or it has been idle too long.
   const Session* touch(std::string_view token, std::uint64_t now_ms) {
     if (token.size() < 32) return nullptr;
     for (Session& session : sessions_) {
       if (!session.used || !same_text(session.token, token)) continue;
-      if (now_ms - session.last_seen_ms > kSessionIdleMs) { session = Session{}; return nullptr; }
+      const std::uint64_t allowed = session.remembered ? kRememberedIdleMs : kSessionIdleMs;
+      if (now_ms - session.last_seen_ms > allowed) { session = Session{}; return nullptr; }
       session.last_seen_ms = now_ms;
       return &session;
     }
