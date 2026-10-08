@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented here.
 
+## [0.5.2] - Same fix as 0.5.1, with a number of its own
+
+- A first 0.5.1 image went onto a bench node before the map fix was complete. This build carries the complete fix (see 0.5.1) and a new number, so a node that has the earlier 0.5.1 sees it as an update.
+
 ## [0.5.1] - The map of the panel never showed any people
 
 - **Real bug, reported on the bench:** the live map of the panel never showed a person. The node put a browser on the list of those it sends the map to inside the websocket's handler, but ESP-IDF does not call that handler for the handshake (only for the frames that follow it, and a browser sends none), so the list stayed empty and nothing was ever sent. The handshake now has its own two steps: the session is checked before it is answered (without one the connection is closed), and the browser is put on the list right after. Each entry also remembers the server it belongs to (plain HTTP or HTTPS) and is answered through that one, places left taken by browsers that went away are freed (the oldest makes room when all four are busy), and the task that draws the map has more stack.
