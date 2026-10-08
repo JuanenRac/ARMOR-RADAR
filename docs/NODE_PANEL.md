@@ -101,6 +101,11 @@ checks the image (its own hash and its project name) before it changes the boot 
 goes back to the previous version by itself if the new one does not bring its panel up and stay up for thirty seconds. The flash holds
 two application slots (`partitions.csv`). The first flash of a board is still USB (`tools\flash.bat`).
 
+*Firmware and log → Search GitHub* installs the newest release of the repository by itself. A release is installed only if it carries two files: `armor_radar.bin`
+(the application image, not the merged one) and `armor_radar.bin.sha256` (its SHA-256 in hex, the line `sha256sum armor_radar.bin` writes). The node downloads the
+image, hashes it while it comes in and, when the hash is not the one published, throws it away without touching the boot partition; a release without that file is not
+offered. The upload by hand does not need it.
+
 ## Security notes
 
 * Passwords are stored as PBKDF2-HMAC-SHA256 with a random salt (10 000 rounds); sessions are random tokens in an `HttpOnly`,

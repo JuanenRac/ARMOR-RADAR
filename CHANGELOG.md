@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented here.
 
+## [0.5.3] - The firmware installed from GitHub is checked against the hash of the release
+
+- **Real hole closed:** the node computed the SHA-256 of the image it downloaded from GitHub but never compared it with anything. Each release now carries `armor_radar.bin.sha256` next to `armor_radar.bin`; the node reads it, installs only an image that hashes to exactly that, and otherwise refuses (`checksum_mismatch`) leaving the boot partition as it was. A newer release without that file is reported (`no_checksum`) and not installed. The manual upload is unchanged. The panel's messages for both cases are in the seven languages.
+
+
 ## [0.5.2] - Same fix as 0.5.1, with a number of its own
 
 - A first 0.5.1 image went onto a bench node before the map fix was complete. This build carries the complete fix (see 0.5.1) and a new number, so a node that has the earlier 0.5.1 sees it as an update.

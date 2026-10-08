@@ -13,12 +13,16 @@ namespace armor::github_update {
 // which has the bootloader and partition table too - installing that into an OTA slot would not boot).
 constexpr const char* kRepo = "JuanenRac/ARMOR-RADAR";
 constexpr const char* kAssetName = "armor_radar.bin";
+// Next to it every release carries the SHA-256 of that file (`armor_radar.bin.sha256`, the hash in hex, optionally followed by the file name, as sha256sum
+// writes it). A node installs a release only when the image it downloaded has exactly that hash: a truncated, altered or mixed-up download is refused.
+constexpr const char* kChecksumAssetName = "armor_radar.bin.sha256";
 
 struct CheckResult {
   bool ok = false;             // false: `error` says why (network, no release, no matching asset...)
   std::string error;
   std::string latest_version;  // the release's own tag, without a leading "v"
   std::string asset_url;       // empty when the latest release has no armor_radar.bin attached
+  std::string sha256;          // the hash the release publishes for it (64 lowercase hex digits); empty when it publishes none
   bool update_available = false;
 };
 
@@ -33,7 +37,7 @@ struct InstallResult {
 };
 
 // Downloads `asset_url` (check()'s own, so only ever what GitHub itself published) straight into the next OTA slot - the same checks as
-// an upload (minimum size, the image's own magic byte, the project name) - and sets it to boot. Does not restart; the caller decides when.
-InstallResult install(const std::string& asset_url);
+// an upload (minimum size, the image's own magic byte, the project name) plus the hash: the image must hash to `expected_sha256` or it is thrown away - and sets it to boot. Does not restart; the caller decides when.
+InstallResult install(const std::string& asset_url, const std::string& expected_sha256);
 
 }  // namespace armor::github_update

@@ -760,7 +760,8 @@ esp_err_t post_ota_install(httpd_req_t* r) {
   const github_update::CheckResult checked = github_update::check();
   if (!checked.ok) return send_error(r, 502, checked.error.c_str());
   if (checked.asset_url.empty()) return send_error(r, 404, "no_asset");
-  const github_update::InstallResult installed = github_update::install(checked.asset_url);
+  if (checked.sha256.empty()) return send_error(r, 422, "no_checksum");
+  const github_update::InstallResult installed = github_update::install(checked.asset_url, checked.sha256);
   if (!installed.ok) return send_error(r, 500, installed.error.c_str());
   ESP_LOGW(kTag, "firmware %s (%u bytes) installed from GitHub by \"%s\"; restarting", installed.version.c_str(), static_cast<unsigned>(installed.bytes), who.user.c_str());
   json::Writer w;
