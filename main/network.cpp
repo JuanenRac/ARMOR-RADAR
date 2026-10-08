@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <algorithm>
 #include <cstring>
+#include <atomic>
 #include <mutex>
 extern "C" {
 #include "esp_event.h"
@@ -52,6 +53,12 @@ std::mutex g_scan_lock;
 // exists, the next one in the list is tried - the same backup networks a phone or laptop would remember, tried in order.
 int g_sta_index = 0;
 int g_sta_attempts = 0;
+// While the rescue access point is the only way into the node and someone is on it, the station stays quiet: every try at a Wi-Fi network that is not
+// there scans all channels, the access point shares the radio, and the person's phone loses the network in the middle of whatever it was doing (found
+// on a bench: the rescue network vanished right after signing in to the panel).
+std::atomic<bool> g_rescue_open{false};
+std::atomic<int> g_ap_clients{0};
+constexpr std::int64_t kStationPauseUs = 10 * 1000 * 1000;
 constexpr int kStaAttemptsBeforeSwitch = 4;
 
 config::Network station_network(const config::Settings& s, int index) {
@@ -130,7 +137,10 @@ void on_eth_event(void*, esp_event_base_t, int32_t event_id, void*) {
 }
 #endif
 
-void reconnect_station(void*) { esp_wifi_connect(); }
+void reconnect_station(void*) {
+  if (g_rescue_open && g_ap_clients > 0) { esp_timer_start_once(g_reconnect_timer, kStationPauseUs); return; }
+  esp_wifi_connect();
+}
 
 // The station's own link: found for real on a bench, twice in a row (two different routers, nothing shared with it but the same ESP32-S3 station): the
 // radio stays "connected" (no WIFI_EVENT_STA_DISCONNECTED, the signal is good, nothing in the log says anything went wrong) but the node stops being
@@ -195,11 +205,13 @@ void on_wifi_event(void*, esp_event_base_t, int32_t event_id, void* data) {
     case WIFI_EVENT_AP_START: ESP_LOGI(kTag, "access point \"%s\" started on channel %d", g_plan.ap.ssid.c_str(), g_plan.ap.channel); break;
     case WIFI_EVENT_AP_STACONNECTED: {
       const auto* event = static_cast<wifi_event_ap_staconnected_t*>(data);
+      g_ap_clients += 1;
       ESP_LOGI(kTag, "a client joined the access point: %s", mac_text(event->mac).c_str());
       break;
     }
     case WIFI_EVENT_AP_STADISCONNECTED: {
       const auto* event = static_cast<wifi_event_ap_stadisconnected_t*>(data);
+      if (g_ap_clients > 0) g_ap_clients -= 1;
       ESP_LOGI(kTag, "a client left the access point: %s", mac_text(event->mac).c_str());
       break;
     }
@@ -225,6 +237,8 @@ void on_wifi_event(void*, esp_event_base_t, int32_t event_id, void* data) {
       switch (event->reason) {
         case WIFI_REASON_NO_AP_FOUND: error = "network_not_found"; break;
         case WIFI_REASON_AUTH_FAIL: case WIFI_REASON_AUTH_EXPIRE: case WIFI_REASON_ASSOC_FAIL: case WIFI_REASON_HANDSHAKE_TIMEOUT: case WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT: error = "wrong_password"; break;
+        // The network is there but does not accept the security this station asks for - what a secured network answers when the saved password is empty.
+        case WIFI_REASON_NO_AP_FOUND_W_COMPATIBLE_SECURITY: case WIFI_REASON_NO_AP_FOUND_IN_AUTHMODE_THRESHOLD: error = "wrong_password"; break;
         default: break;
       }
       std::string ssid;
@@ -237,6 +251,10 @@ void on_wifi_event(void*, esp_event_base_t, int32_t event_id, void* data) {
         g_status.sta_error = error;
         ssid = g_status.sta_ssid;
         total = station_network_count(g_settings);
+      }
+      if (g_rescue_open && g_ap_clients > 0 && g_reconnect_timer != nullptr) {   // someone is using the rescue network: no scanning now
+        esp_timer_start_once(g_reconnect_timer, kStationPauseUs);
+        break;
       }
       g_sta_attempts += 1;
       // Enough tries on this one, and there is somewhere else to try: the same backup networks a phone would remember.
@@ -332,6 +350,7 @@ bool wifi_setup(const config::Settings& s, const netplan::Plan& plan, bool stati
     g_sta_index = 0;
     g_sta_attempts = 0;
     wifi_config_t sta = station_wifi_config(station_network(s, g_sta_index));
+    { std::lock_guard<std::mutex> guard(g_lock); g_status.sta_ssid = station_network(s, g_sta_index).ssid; }
     if (esp_wifi_set_config(WIFI_IF_STA, &sta) != ESP_OK) { ESP_LOGE(kTag, "the station settings were refused"); return false; }
   }
   esp_wifi_set_ps(WIFI_PS_NONE);  // an access point that sleeps answers late
@@ -377,6 +396,7 @@ void open_rescue_access_point() {
     if (!set_access_point(plan)) return;
   }
   wifi_tune(plan);
+  g_rescue_open = true;
   std::lock_guard<std::mutex> guard(g_lock);
   g_status.ap_active = true;
   g_status.ap_setup = true;

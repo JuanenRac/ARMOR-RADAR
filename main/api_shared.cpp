@@ -8,11 +8,14 @@ extern "C" {
 #include "esp_chip_info.h"
 #include "esp_flash.h"
 #include "esp_heap_caps.h"
+#include "esp_image_format.h"
+#include "esp_partition.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
 #include "esp_system.h"
 #include "esp_timer.h"
 }
+#include "clock_sync.hpp"
 #include "core/json.hpp"
 #include "light_sensor.hpp"
 #include "mqtt_link.hpp"
@@ -73,6 +76,51 @@ void write_radar(json::Writer& w, std::size_t index) {
   w.end_object();
 }
 
+
+// The date and time the node holds, in its own zone, and whether a time server has set it.
+void write_clock(json::Writer& w, const config::Settings& settings) {
+  const clocksync::Info c = clocksync::info();
+  w.key("time").begin_object().field("set", c.set).field("synced", c.synced).field("ntp", settings.time.ntp_enabled).field("epoch", static_cast<long long>(c.epoch))
+      .field("local", c.local).field("utc_offset_min", c.utc_offset_min).field("zone", c.zone).end_object();
+}
+
+// How much of the flash each partition takes, and what the two firmware slots hold. The length of an image needs reading and hashing it
+// (about a tenth of a second), so each slot is measured once: a slot only changes with an update, and an update restarts the node.
+struct SlotLength { bool known = false; std::uint32_t used = 0; };
+std::uint32_t slot_used_bytes(const esp_partition_t* partition, SlotLength& cache) {
+  if (!cache.known) {
+    const esp_partition_pos_t position{partition->address, partition->size};
+    esp_image_metadata_t metadata{};
+    cache.used = esp_image_verify(ESP_IMAGE_VERIFY_SILENT, &position, &metadata) == ESP_OK ? metadata.image_len : 0;
+    cache.known = true;
+  }
+  return cache.used;
+}
+
+void write_flash(json::Writer& w) {
+  static SlotLength lengths[2];
+  std::uint32_t total = 0;
+  esp_flash_get_size(nullptr, &total);
+  const esp_partition_t* running = esp_ota_get_running_partition();
+  const esp_partition_t* next_boot = esp_ota_get_boot_partition();
+  std::uint64_t allocated = 0x9000;   // the bootloader and the partition table come before the first partition
+  w.key("flash").begin_object().field("total", static_cast<long long>(total)).key("partitions").begin_array();
+  for (esp_partition_iterator_t it = esp_partition_find(ESP_PARTITION_TYPE_ANY, ESP_PARTITION_SUBTYPE_ANY, nullptr); it != nullptr; it = esp_partition_next(it)) {
+    const esp_partition_t* partition = esp_partition_get(it);
+    allocated += partition->size;
+    w.begin_object().field("label", partition->label).field("size", static_cast<long long>(partition->size));
+    if (partition->type == ESP_PARTITION_TYPE_APP) {
+      const int slot = partition->subtype == ESP_PARTITION_SUBTYPE_APP_OTA_1 ? 1 : 0;
+      esp_app_desc_t description{};
+      const bool holds_firmware = esp_ota_get_partition_description(partition, &description) == ESP_OK;
+      w.field("app", true).field("used", static_cast<long long>(holds_firmware ? slot_used_bytes(partition, lengths[slot]) : 0))
+          .field("version", holds_firmware ? description.version : "").field("running", partition == running).field("next_boot", partition == next_boot);
+    }
+    w.end_object();
+  }
+  w.end_array().field("allocated", static_cast<long long>(allocated)).end_object();
+}
+
 std::string status_json() {
   const config::Settings s = store::settings();
   const mqtt_link::Status m = mqtt_link::status();
@@ -82,6 +130,8 @@ std::string status_json() {
       .field("reset_reason", reset_reason_text()).field("heap_free", static_cast<long long>(esp_get_free_heap_size())).field("heap_min", static_cast<long long>(esp_get_minimum_free_heap_size()))
       .field("psram_free", static_cast<long long>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM))).field("partition", running != nullptr ? running->label : "?");
   write_hardware(w);
+  write_clock(w, s);
+  write_flash(w);
   write_network(w);
   w.key("mqtt").begin_object().field("enabled", m.enabled).field("connected", m.connected).field("clock_set", m.clock_set).field("published", static_cast<long long>(m.published)).field("withheld", m.withheld).end_object();
   const float lux = light_lux();

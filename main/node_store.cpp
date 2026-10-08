@@ -21,6 +21,7 @@ constexpr char kTag[] = "armor-store";
 constexpr char kNamespace[] = "armor";
 constexpr char kSettingsKey[] = "config";
 constexpr char kUsersKey[] = "users";
+constexpr char kSetupCodeKey[] = "setup_code";
 constexpr unsigned kHashIterations = 10000;
 
 std::mutex g_lock;
@@ -76,7 +77,7 @@ config::Settings first_settings() {
     s.mqtt.username = CONFIG_ARMOR_MQTT_USERNAME;
     s.mqtt.password = CONFIG_ARMOR_MQTT_PASSWORD;
   }
-  s.mqtt.ntp = CONFIG_ARMOR_NTP_SERVER;
+  s.time.ntp = CONFIG_ARMOR_NTP_SERVER;
   s.mqtt.heartbeat_s = CONFIG_ARMOR_HEARTBEAT_S;
   s.mqtt.telemetry_ms = CONFIG_ARMOR_TELEMETRY_PERIOD_MS;
   for (std::size_t i = 0; i < config::kRadarCount; ++i) s.radars[i].enabled = i < static_cast<std::size_t>(CONFIG_ARMOR_RADAR_COUNT);
@@ -109,18 +110,27 @@ void init() {
     }
   }
   if (read_blob(kUsersKey, text) && !g_users.from_json(text)) ESP_LOGE(kTag, "the stored users could not be read: the node is back in setup");
-  if (g_users.empty()) {
-    const std::size_t secret_length = std::strlen(CONFIG_ARMOR_FLEET_SECRET);
-    if (secret_length >= 16) {
-      // The code of this board: HMAC-SHA256 of its MAC (twelve lowercase hexadecimal digits) with the fleet secret, ten symbols of it.
-      const std::string mac_text = auth::to_hex(g_mac, sizeof g_mac);
-      std::uint8_t digest[32];
-      if (mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), reinterpret_cast<const unsigned char*>(CONFIG_ARMOR_FLEET_SECRET), secret_length,
-                          reinterpret_cast<const unsigned char*>(mac_text.data()), mac_text.size(), digest) == 0) g_setup_code = auth::setup_code_from(digest, 10);
-    }
-    if (!g_setup_code.empty()) { /* derived from the fleet secret */ }
-    else if (std::strlen(CONFIG_ARMOR_SETUP_CODE) >= 8) g_setup_code = CONFIG_ARMOR_SETUP_CODE;
-    else { std::uint8_t bytes[8]; random_bytes(bytes, sizeof bytes); g_setup_code = auth::setup_code_from(bytes, sizeof bytes); }
+  // The board's code: first from the fleet secret (the owner can always work it out again), then the one built into the image, and last a
+  // random one that is kept in flash so it is the same at every start. It only ever opens a node with no administrator yet (the panel and
+  // Bluetooth both refuse it once there is one) and, afterwards, the node's rescue network (network.cpp), which needs a password that still
+  // exists and that the owner can learn - the old way erased it the moment the administrator was created, and the rescue network
+  // could then not start.
+  const std::size_t secret_length = std::strlen(CONFIG_ARMOR_FLEET_SECRET);
+  if (secret_length >= 16) {
+    // HMAC-SHA256 of the MAC (twelve lowercase hexadecimal digits) with the fleet secret, ten symbols of it.
+    const std::string mac_text = auth::to_hex(g_mac, sizeof g_mac);
+    std::uint8_t digest[32];
+    if (mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), reinterpret_cast<const unsigned char*>(CONFIG_ARMOR_FLEET_SECRET), secret_length,
+                        reinterpret_cast<const unsigned char*>(mac_text.data()), mac_text.size(), digest) == 0) g_setup_code = auth::setup_code_from(digest, 10);
+  }
+  if (!g_setup_code.empty()) { /* derived from the fleet secret */ }
+  else if (std::strlen(CONFIG_ARMOR_SETUP_CODE) >= 8) g_setup_code = CONFIG_ARMOR_SETUP_CODE;
+  else if (read_blob(kSetupCodeKey, text) && text.size() >= 8) g_setup_code = text;
+  else {
+    std::uint8_t bytes[8];
+    random_bytes(bytes, sizeof bytes);
+    g_setup_code = auth::setup_code_from(bytes, sizeof bytes);
+    write_blob(kSetupCodeKey, g_setup_code);
   }
 }
 
@@ -169,7 +179,6 @@ auth::Result user_add(std::string_view name, std::string_view password, auth::Ro
   std::lock_guard<std::mutex> guard(g_lock);
   const auth::Result result = g_users.add(name, password, role, new_salt(), hash_password);
   if (result == auth::Result::kOk && !persist_users()) { g_users.remove(name); return auth::Result::kTooMany; }
-  if (result == auth::Result::kOk) g_setup_code.clear();
   return result;
 }
 

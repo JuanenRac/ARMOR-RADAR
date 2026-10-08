@@ -73,7 +73,9 @@ input.bad, select.bad { border-color: var(--bad); }
 .err { color: #ffafb0; font-size: .7rem; min-height: 0; }
 .hint { color: #7d9ca8; font-size: .68rem; }
 button.b, .b { border: 1px solid var(--button-line); border-radius: 8px; padding: .5rem .8rem; background: var(--button); color: #d9f6fb; font-size: .8rem; }
-button.b:hover { border-color: #69d9d6; background: #133541; }
+button.b:hover, label.b:hover, label.b:focus-within { border-color: #69d9d6; background: #133541; }
+label.b { display: inline-block; cursor: pointer; }
+button.b, label.b { transition: border-color .12s, background .12s; }
 button.primary { background: linear-gradient(115deg, #40cabe, #399cc9); border-color: #69f0db; color: #07151e; font-weight: 700; }
 button.danger { border-color: #974b55; color: #ffc9ca; background: #3e1e28; }
 .actions { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }

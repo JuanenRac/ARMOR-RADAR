@@ -13,10 +13,10 @@ A node that has no user is in **set-up**: it answers only the set-up screen, and
 The first administrator is created with a **set-up code**. The code is either
 
 * the one of the build (`CONFIG_ARMOR_SETUP_CODE`; `tools/provision_node.sh` writes one into the node's secrets file), or
-* a random one made at every start and shown on the USB console every 15 seconds.
+* a random one, made once and kept in flash so that it is the same at every start, shown on the USB console every 15 seconds.
 
-The code is also the password of the set-up Wi-Fi. It works only while the node has no user. After the administrator is created the node
-restarts, which closes the set-up network. To start again, hold the **BOOT** button for 8 seconds in the first 30 seconds after power-up
+The code is also the password of the set-up Wi-Fi. It opens the panel only while the node has no user; it stays the password of the node's rescue Wi-Fi afterwards. After the administrator is created the node
+restarts, which closes the set-up network. The set-up screen also takes a Wi-Fi network for the node to join (optional on a board with a cable: it is how a node is set up on a bench with no cable). To start again, hold the **BOOT** button for 8 seconds in the first 30 seconds after power-up
 (it erases the settings and the users), or use *Factory reset* in the panel.
 
 ## Many nodes: one image, adopted over the network
@@ -32,14 +32,17 @@ holding a board.
 
 | Page | What it does |
 |---|---|
-| Overview | node, network, broker and clock, and the state of the three radars, refreshed every three seconds |
-| Network | Ethernet or Wi-Fi as the connection; DHCP or a fixed address, mask, gateway, two DNS servers, host name |
+| Overview | node, hardware, date and time (with where the time comes from), flash memory (total, reserved by the partitions, what the two firmware slots hold and which one runs), network, broker and the state of the three radars, refreshed every three seconds |
+| Network | Ethernet or Wi-Fi as the connection; DHCP or a fixed address, mask, gateway, two DNS servers, host name; the time zone and the time server (or, with the server off, the browser's clock); Bluetooth; automatic restart; the configuration file (download and load) |
 | Wi-Fi | the node's own access point (name, security, password, channel, hidden, clients, power, width, country, joined to the wire or not) and, for a node without a cable, the Wi-Fi station |
-| Broker | the MQTT broker, its user and password, the health and telemetry periods, the time server; the light sensor and its pins |
-| Radars | per radar: connected, RX and TX pin, live state; the LD2450 commands and detection zones |
+| Broker | the MQTT broker and its backups, user and password, the health and telemetry periods; the light sensor and its pins |
+| Radars | per radar: connected, label, RX and TX pin, position and heading, live state; the LD2450 commands and detection zones (kept in the settings and told to the sensor again at every start) |
+| Map | the three radars and what they see on one live plan, with buttons to spread them over 360° or 270° |
 | Pins | pins mapped as inputs, outputs, PWM or analogue readings, with their live state and a button to switch them |
 | Users | up to four users (administrator or read-only viewer), passwords, and "my password" |
 | Firmware and log | update from a file, restart, factory reset, and the node's log |
+
+Pausing the pointer over a field, a button or a menu entry shows a short hint in the panel's language. Choosing a language in the panel also stores it in the node's settings.
 
 Settings are edited in a working copy and saved with one bar at the bottom; the node checks every value and answers with the fields
 that are wrong. Almost everything applies after a restart (the bar says so and offers it).

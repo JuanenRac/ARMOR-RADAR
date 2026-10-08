@@ -164,6 +164,7 @@ static void test_settings_defaults_and_roundtrip() {
   s.sta.backup = {{"guest", "guest-password"}, {"office", "office-password"}};
   s.mqtt.backup = {{"mqtt://10.0.0.5:1883", "backup-user", "backup-password"}};
   s.auto_restart_hours = 12;
+  s.time.zone = "CET-1CEST,M3.5.0,M10.5.0/3"; s.time.ntp = "time.example.org"; s.time.ntp_enabled = false;
   s.ip.dhcp = false; s.ip.address = "192.168.0.181"; s.ip.gateway = "192.168.0.1"; s.ip.dns1 = "192.168.0.1"; s.ip.hostname = "armor-1";
   config::MappedPin light; light.gpio = 39; light.name = "garden_light"; light.mode = config::PinMode::kOutput; light.invert = true; light.safe = config::SafeState::kOff; light.link_timeout_s = 60; light.pulse_ms = 800;
   config::MappedPin door; door.gpio = 40; door.name = "gate_contact"; door.mode = config::PinMode::kInput; door.pull = config::Pull::kUp; door.report = "open";
@@ -182,6 +183,7 @@ static void test_settings_defaults_and_roundtrip() {
   CHECK(back.sta.backup.size() == 2 && back.sta.backup[0].ssid == "guest" && back.sta.backup[0].password == "guest-password" && back.sta.backup[1].ssid == "office");
   CHECK(back.mqtt.backup.size() == 1 && back.mqtt.backup[0].uri == "mqtt://10.0.0.5:1883" && back.mqtt.backup[0].username == "backup-user" && back.mqtt.backup[0].password == "backup-password");
   CHECK(back.auto_restart_hours == 12);
+  CHECK(back.time.zone == "CET-1CEST,M3.5.0,M10.5.0/3" && back.time.ntp == "time.example.org" && !back.time.ntp_enabled);
   CHECK(back.pins.size() == 3 && back.pins[0].name == "garden_light" && back.pins[0].invert && back.pins[0].safe == config::SafeState::kOff && back.pins[0].link_timeout_s == 60);
   CHECK(back.pins[1].report == "open" && back.pins[1].pull == config::Pull::kUp && back.pins[2].scale == 0.0057 && back.pins[2].offset == -0.1);
   CHECK(!back.ip.dhcp && back.ip.address == "192.168.0.181" && back.ap.channel == 6 && back.ap.hidden);
@@ -214,6 +216,26 @@ static void test_settings_partial_update_and_secrets() {
   CHECK(config::load(R"({"language":"x"})", with_pin, out, problems) && out.pins.size() == 1);
   problems.clear();
   CHECK(config::load(R"({"pins":[]})", with_pin, out, problems) && out.pins.empty());
+  problems.clear();
+  // "sta.backup" and "mqtt.backup" replace the whole list too - found for real: removing both backup brokers in the panel and saving
+  // brought them straight back, because the document's list was only ever appended to the stored one, never replacing it.
+  config::Settings with_backups = base;
+  with_backups.sta.backup = {{"guest", "guest-password"}};
+  with_backups.mqtt.backup = {{"mqtt://10.0.0.5:1883", "u", "p"}, {"mqtt://10.0.0.6:1883", "u2", "p2"}};
+  CHECK(config::load(R"({"language":"x"})", with_backups, out, problems) && out.sta.backup.size() == 1 && out.mqtt.backup.size() == 2);
+  problems.clear();
+  CHECK(config::load(R"({"sta":{"backup":[]},"mqtt":{"backup":[]}})", with_backups, out, problems) && out.sta.backup.empty() && out.mqtt.backup.empty());
+  problems.clear();
+  CHECK(config::load(R"({"mqtt":{"backup":[{"uri":"mqtt://10.0.0.9:1883"}]}})", with_backups, out, problems) && out.mqtt.backup.size() == 1 && out.mqtt.backup[0].uri == "mqtt://10.0.0.9:1883");
+  problems.clear();
+  // the panel only knows THAT a backup has a password: sent again without one, the same network / the same account keeps it (found for real:
+  // a backup broker's password vanished from the exported file after any later save)
+  CHECK(config::load(R"({"sta":{"backup":[{"ssid":"guest"}]},"mqtt":{"backup":[{"uri":"mqtt://10.0.0.5:1883","username":"u"},{"uri":"mqtt://10.0.0.6:1883","username":"u2","password":""}]}})", with_backups, out, problems)
+        && out.sta.backup[0].password == "guest-password" && out.mqtt.backup[0].password == "p" && out.mqtt.backup[1].password == "p2");
+  problems.clear();
+  // a different network name is a different network: no password carries over; a new password replaces; "password_clear" removes
+  CHECK(config::load(R"({"sta":{"backup":[{"ssid":"other"}]},"mqtt":{"backup":[{"uri":"mqtt://10.0.0.5:1883","username":"u","password":"new"},{"uri":"mqtt://10.0.0.6:1883","username":"u2","password_clear":true}]}})", with_backups, out, problems)
+        && out.sta.backup[0].password.empty() && out.mqtt.backup[0].password == "new" && out.mqtt.backup[1].password.empty());
 }
 
 static void test_settings_rejections() {
@@ -275,6 +297,16 @@ static void test_settings_rejections() {
   CHECK(rejected(R"({"mqtt":{"uri":""}})", "mqtt.uri", "required"));
   CHECK(rejected(R"({"mqtt":{"heartbeat_s":1}})", "mqtt.heartbeat_s", "range"));
   CHECK(rejected(R"({"mqtt":{"telemetry_ms":100}})", "mqtt.telemetry_ms", "range"));
+  // the clock: a zone is a POSIX rule (it goes to setenv), the time server a host name; an old document kept the server under mqtt
+  CHECK(rejected(R"({"time":{"zone":"Europe/Madrid; rm"}})", "time.zone", "invalid"));
+  CHECK(rejected(R"({"time":{"zone":""}})", "time.zone", "invalid"));
+  CHECK(rejected(R"({"time":{"ntp_enabled":true,"ntp":"not a host"}})", "time.ntp", "invalid"));
+  {
+    config::Settings legacy;
+    config::Problems legacy_problems;
+    CHECK(config::load(R"({"mqtt":{"ntp":"ntp.old.example"}})", base, legacy, legacy_problems) && legacy.time.ntp == "ntp.old.example");
+    CHECK(config::to_json(legacy, true).find("\"ntp\":\"ntp.old.example\"") != std::string::npos && config::to_json(legacy, true).find("\"mqtt\":{") != std::string::npos);
+  }
   CHECK(rejected(R"({"system":{"auto_restart_hours":5}})", "system.auto_restart_hours", "invalid"));
   CHECK(rejected(R"({"system":{"auto_restart_hours":49}})", "system.auto_restart_hours", "range"));
   CHECK(rejected(R"({"system":{"auto_restart_hours":-1}})", "system.auto_restart_hours", "range"));
@@ -882,10 +914,21 @@ static void test_sensor_models_in_settings() {
   config::Settings mixed = base;
   mixed.radars[0].model = "ld2461"; mixed.radars[0].baud = 9600;
   mixed.radars[1].model = "mr24hpc1"; mixed.radars[1].name = "hall";
+  mixed.radars[0].zone_type = 2; mixed.radars[0].zones[0] = {-500, 200, 500, 2000}; mixed.radars[0].zones[2] = {1000, 0, 3000, 4000}; mixed.radars[0].target_mode = 2;
   mixed.radars[0].offset_x_mm = 150; mixed.radars[0].offset_y_mm = -80; mixed.radars[0].yaw_deg = 120; mixed.radars[0].pitch_deg = -10;
   const std::string stored = config::to_json(mixed, true);
   config::Settings back;
   CHECK(config::load(stored, base, back, problems) && back.radars[0].model == "ld2461" && back.radars[0].baud == 9600 && back.radars[1].model == "mr24hpc1" && back.radars[1].name == "hall" && config::to_json(back, true) == stored);
+  CHECK(back.radars[0].zone_type == 2 && back.radars[0].zones[0].x1 == -500 && back.radars[0].zones[0].y2 == 2000 && back.radars[0].zones[1].x1 == 0 && back.radars[0].zones[2].x2 == 3000 && back.radars[0].target_mode == 2);
+  problems.clear();
+  CHECK(!config::load(R"({"radars":[{"zones":{"type":3}}]})", base, out, problems) && has_problem(problems, "radars.0.zones.type", "range"));
+  problems.clear();
+  CHECK(!config::load(R"({"radars":[{"zones":{"list":[{},{},{},{}]}}]})", base, out, problems) && has_problem(problems, "radars.0.zones.list", "invalid"));
+  problems.clear();
+  CHECK(!config::load(R"({"radars":[{"target_mode":3}]})", base, out, problems) && has_problem(problems, "radars.0.target_mode", "range"));
+  problems.clear();
+  CHECK(config::load(R"({"radars":[{},{"zones":{"type":1,"list":[{"x1":-100,"y1":0,"x2":100,"y2":900}]}}]})", base, out, problems) && out.radars[1].zone_type == 1 && out.radars[1].zones[0].y2 == 900 && out.radars[0].zone_type == 0);
+  problems.clear();
   CHECK(back.radars[0].offset_x_mm == 150 && back.radars[0].offset_y_mm == -80 && back.radars[0].yaw_deg == 120 && back.radars[0].pitch_deg == -10);
   problems.clear();
   CHECK(!config::load(R"({"radars":[{"yaw_deg":200}]})", base, out, problems) && has_problem(problems, "radars.0.yaw_deg", "range"));

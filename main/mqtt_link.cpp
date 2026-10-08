@@ -11,7 +11,6 @@
 extern "C" {
 #include <sys/time.h>
 #include "esp_log.h"
-#include "esp_sntp.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -208,10 +207,7 @@ void broker_watchdog_task(void*) {
 // Waits for an address, then starts the clock and the broker connection once. The radars and the pins keep running meanwhile.
 void link_task(void*) {
   while (!network::has_ip()) vTaskDelay(pdMS_TO_TICKS(500));
-  esp_sntp_setoperatingmode(ESP_SNTP_OPMODE_POLL);
-  esp_sntp_setservername(0, g_settings.mqtt.ntp.c_str());
-  esp_sntp_init();
-
+  // The clock itself is clock_sync.cpp's (it starts without a broker too); the link only waits for it to hold a real date.
   if (!armor::build_topic(g_settings.node_id, "health", g_health_topic, sizeof g_health_topic)) vTaskDelete(nullptr);
   // The last will carries the node's time at connection; the server always applies an offline message, whatever its timestamp.
   while (!clock_is_set()) vTaskDelay(pdMS_TO_TICKS(500));

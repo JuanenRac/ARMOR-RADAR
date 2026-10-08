@@ -48,7 +48,7 @@ Once, on the computer that builds:
 
 `fleet.json` holds what every node shares (the Wi-Fi name and password, the broker address, the language). `fleet.secret` is what turns a board's
 MAC into its **set-up code** (HMAC-SHA256, ten symbols), so a board can be adopted over the network with no cable. Without the secret the code is
-random at every start and shown on the board's USB console.
+random, made once, kept in flash (so it is the same at every start) and shown on the board's USB console.
 
 ## 3. Program a board (USB, once) and adopt it (network)
 

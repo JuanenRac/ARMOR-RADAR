@@ -41,6 +41,7 @@ extern "C" {
 #include "log_buffer.hpp"
 #include "mqtt_link.hpp"
 #include "api_shared.hpp"
+#include "clock_sync.hpp"
 #include "github_update.hpp"
 #include "network.hpp"
 #include "node_store.hpp"
@@ -272,14 +273,15 @@ esp_err_t post_setup(httpd_req_t* r) {
   const std::string user = in.string_or("user", ""), password = in.string_or("password", "");
   config::Settings s = store::settings();
   bool changed = false;
-  if (!board::kHasEthernet) {
+  const std::string wifi_ssid = in.string_or("wifi_ssid", ""), wifi_password = in.string_or("wifi_password", "");
+  if (!board::kHasEthernet || !wifi_ssid.empty()) {
     // A board with no cable needs a way in for after the setup: the Wi-Fi network it is to join, and its own network (named after the board and keyed with the
-    // setup code the administrator has just used; it can be changed in the panel) so it can always be reached. Nothing is created if this is refused.
-    const std::string wifi_ssid = in.string_or("wifi_ssid", ""), wifi_password = in.string_or("wifi_password", "");
+    // setup code the administrator has just used; it can be changed in the panel) so it can always be reached. A board WITH a cable may be given a Wi-Fi network
+    // here too (the cable is then not used): it is how a node is set up on a bench with no cable. Nothing is created if this is refused.
     if (wifi_ssid.empty()) return send_error(r, 422, "wifi_required");
     s.uplink = config::Uplink::kWifi;
     s.sta.enabled = true; s.sta.ssid = wifi_ssid; s.sta.password = wifi_password;
-    if (!s.ap.enabled) {
+    if (!board::kHasEthernet && !s.ap.enabled) {
       s.ap.enabled = true;
       s.ap.ssid = "ARMOR-" + netplan::upper(store::mac_tail());
       s.ap.security = config::WifiSecurity::kWpa2;
@@ -711,6 +713,18 @@ esp_err_t post_ota(httpd_req_t* r) {
   return send_json(r, 200, w.str());
 }
 
+// Setting the time by hand (the browser sends its own clock), for a node with no time server. Admins only.
+esp_err_t post_time(httpd_req_t* r) {
+  Who who;
+  if (!require(r, who, true, true)) return ESP_OK;
+  json::Value in;
+  if (!read_json(r, in)) return ESP_OK;
+  const long long seconds = in.integer_or("epoch", -1, 0, 4102444800LL);
+  if (seconds < 0 || !clocksync::set_unix(seconds)) return send_error(r, 422, "invalid_time");
+  ESP_LOGI(kTag, "clock set by \"%s\"", who.user.c_str());
+  return send_ok(r);
+}
+
 // The GitHub counterpart of post_ota(): checking for a release, and installing it, next to (never instead of) the manual upload above.
 esp_err_t get_ota_check(httpd_req_t* r) {
   Who who;
@@ -770,6 +784,7 @@ esp_err_t api_handler(httpd_req_t* r) {
     if (route == "factory-reset") return post_factory_reset(r);
     if (route == "ota") return post_ota(r);
     if (route == "ota/install") return post_ota_install(r);
+    if (route == "time") return post_time(r);
   } else if (method == HTTP_PUT) {
     if (route == "config") return put_config(r);
     if (route == "account") return put_account(r);

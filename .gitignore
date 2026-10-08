@@ -1,3 +1,4 @@
+.compile/
 build/
 .pio/
 sdkconfig

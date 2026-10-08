@@ -9,6 +9,7 @@
 #include "../main/core/frame_framer.hpp"
 #include "../main/core/ld2450.hpp"
 #include "../main/core/node_id.hpp"
+#include "../main/core/civil_time.hpp"
 #include "../main/core/radar_calibration.hpp"
 #include "../main/core/radar_health.hpp"
 #include "../main/core/semver.hpp"
@@ -473,6 +474,19 @@ static void test_semver() {
   CHECK(parse("v2.10.3").ok && parse("v2.10.3").major == 2 && parse("v2.10.3").minor == 10 && parse("v2.10.3").patch == 3);
 }
 
+static void test_civil_time() {
+  using namespace civil;
+  CHECK(days_from_civil(1970, 1, 1) == 0 && days_from_civil(1970, 1, 2) == 1 && days_from_civil(1969, 12, 31) == -1);
+  CHECK(days_from_civil(2000, 3, 1) == 11017);                  // after a leap day divisible by 400
+  CHECK(seconds_as_utc(2026, 10, 8, 10, 31, 7) == 1791455467);  // 2026-10-08 10:31:07 UTC
+  // Spain: UTC+1 in winter, UTC+2 in summer - the local reading read as UTC, minus the true UTC time
+  CHECK(utc_offset_minutes(seconds_as_utc(2026, 1, 15, 12, 0, 0), 2026, 1, 15, 13, 0, 0) == 60);
+  CHECK(utc_offset_minutes(seconds_as_utc(2026, 7, 15, 12, 0, 0), 2026, 7, 15, 14, 0, 0) == 120);
+  CHECK(utc_offset_minutes(seconds_as_utc(2026, 7, 15, 12, 0, 0), 2026, 7, 15, 12, 0, 0) == 0);
+  CHECK(utc_offset_minutes(seconds_as_utc(2026, 7, 15, 12, 0, 0), 2026, 7, 15, 7, 0, 0) == -300);   // New York in summer
+  CHECK(utc_offset_minutes(seconds_as_utc(2026, 12, 31, 23, 30, 0), 2027, 1, 1, 5, 0, 0) == 330);   // India: UTC+5:30 across New Year
+}
+
 // Real frames captured from a node (tools/frames_to_fixture.py), when the file exists: the decoder's first check against a real module.
 static void test_real_frames_fixture() {
   std::string path = __FILE__;
@@ -516,6 +530,7 @@ int main() {
   test_270_degree_layout();
   test_radar_calibration();
   test_semver();
+  test_civil_time();
   test_real_frames_fixture();
   std::printf("%d checks, %d failures\n", checks, failures);
   return failures == 0 ? 0 : 1;

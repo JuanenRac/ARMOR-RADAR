@@ -28,6 +28,7 @@ extern "C" {
 #include "sdkconfig.h"
 }
 #include "ble_provision.hpp"
+#include "clock_sync.hpp"
 #include "core/network_plan.hpp"
 #include "gpio_manager.hpp"
 #include "light_sensor.hpp"
@@ -118,6 +119,7 @@ extern "C" void app_main() {
     // Without an address after 90 s (no cable, no Wi-Fi it can join) the node would be unreachable: it opens the set-up access point again.
     armor::network::arm_rescue(armor::netplan::plan_network(settings, true, armor::store::setup_code(), armor::store::mac_tail(), armor::store::mac_sum()), 90);
   }
+  armor::clocksync::start(settings);
   const bool panel_ok = network_ok && armor::web::start(settings);
   armor::mqtt_link::start(settings);
   armor::ble_provision::start(settings, setup);   // only when the settings say so: Bluetooth stays unused otherwise

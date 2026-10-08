@@ -447,6 +447,35 @@ void ld2461_format_task(void* argument) {
 }
 }  // namespace
 
+// What the panel once told each sensor (settings: radars[].zones and .target_mode), told to it again at every start: a module that was reset, or
+// a spare one swapped in, would otherwise silently lose it. A radar with nothing set is left exactly as it is.
+struct StoredCommands { int zone_type = 0; std::array<config::ZoneRect, config::kZonesPerRadar> zones{}; int target_mode = 0; };
+StoredCommands g_stored[3];
+
+void apply_stored_task(void*) {
+  vTaskDelay(pdMS_TO_TICKS(6000));   // the modules need a moment after power-up before they listen to commands
+  for (std::size_t i = 0; i < 3; ++i) {
+    if (!g_lines[i].enabled || g_lines[i].tx < 0) continue;
+    const StoredCommands& stored = g_stored[i];
+    const bool ld2450 = g_lines[i].model == sensors::Model::kLd2450;
+    if (ld2450 && stored.target_mode != 0) {
+      const CommandResult result = run(i, stored.target_mode == 1 ? Op::kSingleTarget : Op::kMultiTarget);
+      ESP_LOGI(kTag, "sensor %u: %s targets, as stored: %s", static_cast<unsigned>(i + 1), stored.target_mode == 1 ? "one" : "up to three", result.ok ? "done" : result.error.c_str());
+    }
+    if (stored.zone_type != 0 && (ld2450 || g_lines[i].model == sensors::Model::kLd2461)) {
+      ld2450cmd::ZoneFilter filter;
+      filter.type = static_cast<std::uint16_t>(stored.zone_type);
+      for (std::size_t z = 0; z < config::kZonesPerRadar; ++z) {
+        const config::ZoneRect& rect = stored.zones[z];
+        filter.zones[z] = {static_cast<std::int16_t>(rect.x1), static_cast<std::int16_t>(rect.y1), static_cast<std::int16_t>(rect.x2), static_cast<std::int16_t>(rect.y2)};
+      }
+      const CommandResult result = run(i, Op::kSetZones, false, &filter);
+      ESP_LOGI(kTag, "sensor %u: detection zones (filter %d), as stored: %s", static_cast<unsigned>(i + 1), stored.zone_type, result.ok ? "done" : result.error.c_str());
+    }
+  }
+  vTaskDelete(nullptr);
+}
+
 void start(const config::Settings& settings, Publisher publisher) {
   g_publish = std::move(publisher);
   g_node_id = settings.node_id;
@@ -457,6 +486,7 @@ void start(const config::Settings& settings, Publisher publisher) {
     line.rx = wanted.rx;
     line.tx = wanted.tx;
     line.name = wanted.name;
+    g_stored[i] = {wanted.zone_type, wanted.zones, wanted.target_mode};
     if (!sensors::from_text(wanted.model, line.model)) line.model = sensors::Model::kLd2450;
     if (!line.enabled) continue;
     const sensors::ModelInfo& model = sensors::info(line.model);
@@ -480,6 +510,7 @@ void start(const config::Settings& settings, Publisher publisher) {
              model.tracker ? "" : ", device ", model.tracker ? "" : wanted.name.c_str());
   }
   xTaskCreate(reader_task, "radar", 6144, nullptr, 5, nullptr);
+  xTaskCreate(apply_stored_task, "radar-stored", 4096, nullptr, 2, nullptr);
   for (std::size_t i = 0; i < 3; ++i) {
     if (g_lines[i].enabled && g_lines[i].model == sensors::Model::kLd2461) {
       if (g_lines[i].tx >= 0) xTaskCreate(ld2461_format_task, "ld2461-fmt", 4096, reinterpret_cast<void*>(i), 3, nullptr);
