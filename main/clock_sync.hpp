@@ -24,7 +24,7 @@ struct Info {
   bool synced = false;          // a time server has answered since the start
   std::int64_t epoch = 0;       // seconds since 1970 (UTC)
   int utc_offset_min = 0;       // the zone's offset right now, summer time included
-  std::string local;            // "2026-10-08 10:31:07"
+  std::string local;            // "2000-01-01 10:31:07"
   std::string zone;             // the zone rule in use
 };
 Info info();
