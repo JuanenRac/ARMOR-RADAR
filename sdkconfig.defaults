@@ -33,6 +33,8 @@ CONFIG_LWIP_MAX_SOCKETS=16
 CONFIG_HTTPD_MAX_REQ_HDR_LEN=2048
 # The live 2D radar map (panel/app.js) is pushed over a WebSocket, not polled.
 CONFIG_HTTPD_WS_SUPPORT=y
+CONFIG_HTTPD_WS_PRE_HANDSHAKE_CB_SUPPORT=y
+CONFIG_HTTPD_WS_POST_HANDSHAKE_CB_SUPPORT=y
 # The HTTPS panel: a second server with its own certificate; the TLS buffers are released while a connection is idle.
 CONFIG_ESP_HTTPS_SERVER_ENABLE=y
 CONFIG_MBEDTLS_DYNAMIC_BUFFER=y

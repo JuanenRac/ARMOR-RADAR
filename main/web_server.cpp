@@ -446,37 +446,53 @@ esp_err_t get_radars(httpd_req_t* r) {
 // A live 2D map of the three radars' targets, already placed on one shared plane (core/radar_calibration.hpp) and merged where two
 // radars see the same person. The panel's own calibration fields already describe where each radar sits and points, so this only
 // needs to push the moving part: the targets themselves, a few times a second.
+// A client belongs to the server that accepted it (the plain one on port 80 or the HTTPS one on 443): its frames must go out through that
+// same server, or they are refused and the map stays empty - which is what happened to every browser using the HTTPS address.
 constexpr int kMaxMapClients = 4;
-int g_map_clients[kMaxMapClients] = {-1, -1, -1, -1};
+struct MapClient { int fd = -1; httpd_handle_t server = nullptr; };
+MapClient g_map_clients[kMaxMapClients];
 std::mutex g_map_lock;
 
-esp_err_t ws_radar_map(httpd_req_t* r) {
-  if (r->method == HTTP_GET) {
-    // By the time a handler is called for a websocket URI's GET, ESP-IDF has already sent the 101 handshake response - answering with
-    // a JSON error here (require()'s usual way of saying no) would write on top of an already-upgraded connection. A silent ESP_FAIL
-    // closes it instead: no live socket for a request with no valid session.
-    if (store::users_empty() || !authenticate(r).ok) return ESP_FAIL;
-    const int fd = httpd_req_to_sockfd(r);
-    std::lock_guard<std::mutex> guard(g_map_lock);
-    for (int& slot : g_map_clients) if (slot < 0) { slot = fd; break; }
-    return ESP_OK;
-  }
-  return ESP_OK;   // the browser never sends frames of its own; nothing to read
+// ESP-IDF does not call a websocket URI's handler for the handshake GET (only for the frames that come after it), so the two moments of the
+// handshake have their own callbacks: before the 101 the session is checked (without a valid one the socket is closed and no handshake
+// is answered), and after it the browser is put on the list of those that are sent the map.
+esp_err_t ws_pre_handshake(httpd_req_t* r) {
+  if (store::users_empty() || !authenticate(r).ok) return ESP_FAIL;
+  return ESP_OK;
 }
 
-void forget_map_client(int fd) {
+esp_err_t ws_post_handshake(httpd_req_t* r) {
+  const int fd = httpd_req_to_sockfd(r);
   std::lock_guard<std::mutex> guard(g_map_lock);
-  for (int& slot : g_map_clients) if (slot == fd) slot = -1;
+  // A browser that went away without a word leaves its place taken, and a socket number is soon given to somebody else: places whose
+  // socket is no longer a live websocket of its server are freed, and when all are still in use the oldest one makes room.
+  for (MapClient& slot : g_map_clients) {
+    if (slot.fd >= 0 && (slot.fd == fd || httpd_ws_get_fd_info(slot.server, slot.fd) != HTTPD_WS_CLIENT_WEBSOCKET)) slot = MapClient{};
+  }
+  MapClient* free_slot = nullptr;
+  for (MapClient& slot : g_map_clients) if (slot.fd < 0) { free_slot = &slot; break; }
+  if (free_slot == nullptr) { for (int i = 1; i < kMaxMapClients; ++i) g_map_clients[i - 1] = g_map_clients[i]; free_slot = &g_map_clients[kMaxMapClients - 1]; }
+  free_slot->fd = fd;
+  free_slot->server = r->handle;
+  return ESP_OK;
 }
 
-struct MapSend { int fd; std::string* payload; };
+// The browser never sends frames of its own; nothing to read.
+esp_err_t ws_radar_map(httpd_req_t*) { return ESP_OK; }
+
+void forget_map_client(httpd_handle_t server, int fd) {
+  std::lock_guard<std::mutex> guard(g_map_lock);
+  for (MapClient& slot : g_map_clients) if (slot.fd == fd && slot.server == server) slot = MapClient{};
+}
+
+struct MapSend { httpd_handle_t server; int fd; std::string* payload; };
 void send_map_frame(void* raw) {
   std::unique_ptr<MapSend> job(static_cast<MapSend*>(raw));
   httpd_ws_frame_t frame{};
   frame.type = HTTPD_WS_TYPE_TEXT;
   frame.payload = reinterpret_cast<std::uint8_t*>(job->payload->data());
   frame.len = job->payload->size();
-  if (httpd_ws_send_frame_async(g_server, job->fd, &frame) != ESP_OK) forget_map_client(job->fd);
+  if (httpd_ws_send_frame_async(job->server, job->fd, &frame) != ESP_OK) forget_map_client(job->server, job->fd);
   delete job->payload;
 }
 
@@ -484,8 +500,8 @@ void radar_map_task(void*) {
   for (;;) {
     vTaskDelay(pdMS_TO_TICKS(200));
     bool any_client = false;
-    { std::lock_guard<std::mutex> guard(g_map_lock); for (int fd : g_map_clients) if (fd >= 0) any_client = true; }
-    if (!any_client || g_server == nullptr) continue;
+    { std::lock_guard<std::mutex> guard(g_map_lock); for (const MapClient& client : g_map_clients) if (client.fd >= 0) any_client = true; }
+    if (!any_client) continue;
     armor::Track tracks[armor::kMaximumTracks];
     std::size_t count = radar::collect_tracks(tracks);
     const config::Settings settings = store::settings();
@@ -499,10 +515,10 @@ void radar_map_task(void*) {
     }
     w.end_array().end_object();
     std::lock_guard<std::mutex> guard(g_map_lock);
-    for (int fd : g_map_clients) {
-      if (fd < 0) continue;
-      MapSend* job = new MapSend{fd, new std::string(w.str())};
-      if (httpd_queue_work(g_server, send_map_frame, job) != ESP_OK) { delete job->payload; delete job; }
+    for (const MapClient& client : g_map_clients) {
+      if (client.fd < 0 || client.server == nullptr) continue;
+      MapSend* job = new MapSend{client.server, client.fd, new std::string(w.str())};
+      if (httpd_queue_work(client.server, send_map_frame, job) != ESP_OK) { delete job->payload; delete job; }
     }
   }
 }
@@ -843,6 +859,8 @@ void register_handlers(httpd_handle_t server, bool redirect_only) {
   ws.method = HTTP_GET;
   ws.handler = ws_radar_map;
   ws.is_websocket = true;
+  ws.ws_pre_handshake_cb = ws_pre_handshake;
+  ws.ws_post_handshake_cb = ws_post_handshake;
   httpd_register_uri_handler(server, &ws);
 }
 
@@ -912,7 +930,7 @@ bool start(const config::Settings& settings) {
   register_handlers(g_server, redirect && tls_ok);   // never a redirect to a server that is not there
   ESP_LOGI(kTag, "the panel is on port 80%s", redirect && tls_ok ? " (it sends the browser to HTTPS)" : "");
   static bool map_task_started = false;
-  if (!map_task_started) { xTaskCreate(radar_map_task, "radar-map", 4096, nullptr, 2, nullptr); map_task_started = true; }
+  if (!map_task_started) { xTaskCreate(radar_map_task, "radar-map", 6144, nullptr, 2, nullptr); map_task_started = true; }
   return true;
 }
 

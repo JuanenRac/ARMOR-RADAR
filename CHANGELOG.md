@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented here.
 
+## [0.5.1] - The map of the panel never showed any people
+
+- **Real bug, reported on the bench:** the live map of the panel never showed a person. The node put a browser on the list of those it sends the map to inside the websocket's handler, but ESP-IDF does not call that handler for the handshake (only for the frames that follow it, and a browser sends none), so the list stayed empty and nothing was ever sent. The handshake now has its own two steps: the session is checked before it is answered (without one the connection is closed), and the browser is put on the list right after. Each entry also remembers the server it belongs to (plain HTTP or HTTPS) and is answered through that one, places left taken by browsers that went away are freed (the oldest makes room when all four are busy), and the task that draws the map has more stack.
+
+
 ## [0.5.0] - Date and time, flash overview, hints everywhere and a node that can always be reached
 
 - **Date and time:** a new *Date and time* card on the Overview page shows the node's local time and where it comes from (time server, set by hand, or not set yet). The Network page has a new clock card: the time zone (a list of common zones, with summer time handled by itself), the time server on or off, and, with the server off, a button that sets the node's clock from the browser. The clock now starts by itself as soon as the node has an address - before, it only started together with the broker connection, so a node with no broker never had a time. The time server moved out of the broker settings into a `time` section of the settings file; older files that still carry `mqtt.ntp` load as before.
