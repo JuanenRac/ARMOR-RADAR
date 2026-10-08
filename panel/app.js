@@ -35,7 +35,7 @@ function el(tag, attrs, ...kids) {
 const S = {
   session: null, cfg: null, saved: "", channelAuto: 1, firmware: "", status: null, catalog: [], live: [], radars: [], users: [],
   page: "overview", problems: {}, message: null, restartNeeded: false, radarInfo: {}, zones: {}, scan: { busy: false, list: null, error: "" }, log: { next: 0, text: "" }, busy: false, rebooting: false,
-  github: { busy: false, checked: false, available: false, latest: "", error: "", installing: false },
+  github: { busy: false, checked: false, available: false, latest: "", error: "", installing: false, state: "", pct: 0 },
 };
 const isAdmin = () => S.session && S.session.role === "admin";
 
@@ -682,11 +682,23 @@ async function githubCheck() {
   else { S.github.checked = true; S.github.available = false; S.github.error = errorText((r.data && r.data.error) || "network"); }
   render();
 }
+// The install runs in the node (a task of its own): this starts it and asks, twice a second, how far it is - the bar of the file upload, for the download.
 async function githubInstall() {
-  S.github.installing = true; render();
+  S.github.installing = true; S.github.error = ""; S.github.state = "downloading"; S.github.pct = 0; render();
   const r = await api("POST", "ota/install");
-  if (r.ok) { S.rebooting = true; render(); setTimeout(() => { const wait = async () => { const q = await api("GET", "session"); if (q.ok) location.reload(); else setTimeout(wait, 2000); }; wait(); }, 6000); }
-  else { S.github.installing = false; S.github.error = errorText(r.data.error); render(); }
+  if (!r.ok) { S.github.installing = false; S.github.error = errorText(r.data.error); render(); return; }
+  const restarted = () => { S.rebooting = true; render(); setTimeout(() => { const wait = async () => { const q = await api("GET", "session"); if (q.ok) location.reload(); else setTimeout(wait, 2000); }; wait(); }, 6000); };
+  const poll = async () => {
+    const q = await api("GET", "ota/progress");
+    if (!q.ok) { restarted(); return; }   // the node is already restarting into the new version
+    const d = q.data;
+    S.github.state = d.state;
+    S.github.pct = d.total ? Math.round(d.got * 100 / d.total) : 0;
+    if (d.state === "done") { restarted(); return; }
+    if (d.state === "failed") { S.github.installing = false; S.github.error = errorText(d.error); render(); return; }
+    render(); setTimeout(poll, 500);
+  };
+  setTimeout(poll, 500);
 }
 
 function aboutPage() {
@@ -731,6 +743,8 @@ function updatePage() {
       S.github.checked && !S.github.error ? el("p", { class: "muted" }, S.github.available ? t("githubAvailable", S.github.latest) : t("githubUpToDate")) : null,
       S.github.error ? el("p", { class: "err" }, S.github.error) : null,
       S.github.available ? el("div", { class: "actions" }, el("button", { class: "b danger", disabled: !isAdmin() || S.github.installing, onclick: githubInstall }, S.github.installing ? t("installing") : t("installUpdate"))) : null,
+      S.github.installing ? el("div", { class: "progress" }, el("i", { style: "width:" + S.github.pct + "%" })) : null,
+      S.github.installing ? el("p", { class: "muted" }, S.github.state === "verifying" ? t("githubVerifying") : t("githubDownloading", S.github.pct)) : null,
       note(t("githubUpdateNote"), "info")),
     card(t("maintenance"), el("div", { class: "actions" }, el("button", { class: "b", tip: "rebootNode", disabled: !isAdmin(), onclick: () => confirm(t("confirmAsk")) && reboot() }, t("rebootNode"))),
       el("h3", {}, t("factoryTitle")), el("p", { class: "muted" }, t("factoryHelp")),

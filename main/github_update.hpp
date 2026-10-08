@@ -36,6 +36,18 @@ struct InstallResult {
   std::size_t bytes = 0;
 };
 
+// The install runs in a task of its own so the panel can show how far it is: start() returns at once, progress() says where it stands. `state` is
+// "idle", "downloading", "verifying", "done" or "failed" (with `error`); a "done" install has already set the new image to boot and the caller restarts.
+struct Progress {
+  std::string state = "idle";
+  std::size_t got = 0;
+  std::size_t total = 0;
+  std::string error;
+  std::string version;
+};
+bool start(const std::string& asset_url, const std::string& expected_sha256);   // false when an install is already running
+Progress progress();
+
 // Downloads `asset_url` (check()'s own, so only ever what GitHub itself published) straight into the next OTA slot - the same checks as
 // an upload (minimum size, the image's own magic byte, the project name) plus the hash: the image must hash to `expected_sha256` or it is thrown away - and sets it to boot. Does not restart; the caller decides when.
 InstallResult install(const std::string& asset_url, const std::string& expected_sha256);

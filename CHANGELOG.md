@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## [0.5.4] - Updating from GitHub works, and shows its progress
+
+- **Real bug, found on the bench:** *Search GitHub → Install* stopped with `http_302`. GitHub answers a download with a redirect to another server (and a long, signed address in the `Location` header); the node did not follow it and its header buffer was too small for that address. Redirects are now followed (up to five) and the buffer holds the address. The update had never been able to download anything before this.
+- **Progress:** the install runs in a task of its own and the panel shows a bar (*Downloading the firmware from GitHub… 42%*, then *Checking the image against the hash of the release…*), like the upload of a file does; when it is done the node restarts. A second install while one runs is refused (`ota_busy`).
+- A node that runs 0.5.2 or 0.5.3 cannot update itself from GitHub (that is the bug above): flash this one by file once.
+
+
 ## [0.5.3] - The firmware installed from GitHub is checked against the hash of the release
 
 - **Real hole closed:** the node computed the SHA-256 of the image it downloaded from GitHub but never compared it with anything. Each release now carries `armor_radar.bin.sha256` next to `armor_radar.bin`; the node reads it, installs only an image that hashes to exactly that, and otherwise refuses (`checksum_mismatch`) leaving the boot partition as it was. A newer release without that file is reported (`no_checksum`) and not installed. The manual upload is unchanged. The panel's messages for both cases are in the seven languages.

@@ -3,6 +3,8 @@
 #include "github_update.hpp"
 
 #include <cctype>
+#include <memory>
+#include <mutex>
 #include <cstring>
 extern "C" {
 #include "esp_app_desc.h"
@@ -10,6 +12,8 @@ extern "C" {
 #include "esp_http_client.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "mbedtls/sha256.h"
 }
 #include "core/json.hpp"
@@ -21,6 +25,28 @@ constexpr const char* kTag = "github_update";
 constexpr std::size_t kMaxApiResponse = 24 * 1024;   // the release's own JSON, a changelog included; anything bigger is not trusted
 constexpr std::size_t kMinFirmware = 100 * 1024;
 constexpr std::size_t kMaxFirmware = 4 * 1024 * 1024;
+// GitHub answers a download with a redirect to a storage server whose address is long and signed: the header buffer must hold it.
+constexpr int kHeaderBuffer = 4096;
+constexpr int kMaxRedirects = 5;
+
+// Opens the connection and reads the headers, following redirects (a release asset is always one): `status` and `length` are those of the final answer.
+bool open_following_redirects(esp_http_client_handle_t client, int& length, int& status) {
+  for (int hop = 0; hop <= kMaxRedirects; ++hop) {
+    if (esp_http_client_open(client, 0) != ESP_OK) return false;
+    length = esp_http_client_fetch_headers(client);
+    status = esp_http_client_get_status_code(client);
+    if (status != 301 && status != 302 && status != 303 && status != 307 && status != 308) return true;
+    if (esp_http_client_set_redirection(client) != ESP_OK) return true;   // no usable Location: the 3xx is reported as it is
+    esp_http_client_close(client);
+  }
+  return true;
+}
+
+// Where the install in progress stands (see start()).
+std::mutex g_lock;
+Progress g_progress;
+bool g_running = false;
+struct Job { std::string url; std::string sha; };
 
 // A GET with no body, read fully into a bounded buffer. False on any network, HTTP or size problem.
 bool get_bounded(const std::string& url, const char* accept, std::string& out, std::string& error) {
@@ -28,14 +54,14 @@ bool get_bounded(const std::string& url, const char* accept, std::string& out, s
   config.url = url.c_str();
   config.crt_bundle_attach = esp_crt_bundle_attach;
   config.timeout_ms = 15000;
+  config.buffer_size = kHeaderBuffer;
   esp_http_client_handle_t client = esp_http_client_init(&config);
   if (client == nullptr) { error = "client_init"; return false; }
   esp_http_client_set_header(client, "User-Agent", "ARMOR-RADAR");
   if (accept != nullptr) esp_http_client_set_header(client, "Accept", accept);
   bool ok = false;
-  if (esp_http_client_open(client, 0) == ESP_OK) {
-    const int length = esp_http_client_fetch_headers(client);
-    const int status = esp_http_client_get_status_code(client);
+  int length = 0, status = 0;
+  if (open_following_redirects(client, length, status)) {
     if (status != 200) { error = "http_" + std::to_string(status); }
     else if (length > 0 && static_cast<std::size_t>(length) > kMaxApiResponse) { error = "too_large"; }
     else {
@@ -122,18 +148,19 @@ InstallResult install(const std::string& asset_url, const std::string& expected_
   config.url = asset_url.c_str();
   config.crt_bundle_attach = esp_crt_bundle_attach;
   config.timeout_ms = 20000;
+  config.buffer_size = kHeaderBuffer;
   esp_http_client_handle_t client = esp_http_client_init(&config);
   if (client == nullptr) { result.error = "client_init"; return result; }
   esp_http_client_set_header(client, "User-Agent", "ARMOR-RADAR");
-  if (esp_http_client_open(client, 0) != ESP_OK) { result.error = "connect_failed"; esp_http_client_cleanup(client); return result; }
-  const int length = esp_http_client_fetch_headers(client);
-  const int status = esp_http_client_get_status_code(client);
+  int length = 0, status = 0;
+  if (!open_following_redirects(client, length, status)) { result.error = "connect_failed"; esp_http_client_cleanup(client); return result; }
   if (status != 200 || length <= 0 || static_cast<std::size_t>(length) < kMinFirmware || static_cast<std::size_t>(length) > kMaxFirmware) {
     result.error = status != 200 ? "http_" + std::to_string(status) : "bad_size";
     esp_http_client_close(client); esp_http_client_cleanup(client);
     return result;
   }
   const std::size_t total = static_cast<std::size_t>(length);
+  { std::lock_guard<std::mutex> guard(g_lock); g_progress.total = total; g_progress.got = 0; g_progress.state = "downloading"; }
   const esp_partition_t* target = esp_ota_get_next_update_partition(nullptr);
   if (target == nullptr) { result.error = "no_partition"; esp_http_client_close(client); esp_http_client_cleanup(client); return result; }
   esp_ota_handle_t handle = 0;
@@ -155,10 +182,12 @@ InstallResult install(const std::string& asset_url, const std::string& expected_
     if (esp_ota_write(handle, chunk, static_cast<std::size_t>(n)) != ESP_OK) { result.error = "ota_write"; failed = true; break; }
     mbedtls_sha256_update(&sha, chunk, static_cast<std::size_t>(n));
     got += static_cast<std::size_t>(n);
+    { std::lock_guard<std::mutex> guard(g_lock); g_progress.got = got; }
   }
   esp_http_client_close(client);
   esp_http_client_cleanup(client);
   if (failed) { esp_ota_abort(handle); mbedtls_sha256_free(&sha); return result; }
+  { std::lock_guard<std::mutex> guard(g_lock); g_progress.state = "verifying"; }
   std::uint8_t digest[32];
   mbedtls_sha256_finish(&sha, digest);
   mbedtls_sha256_free(&sha);
@@ -181,6 +210,45 @@ InstallResult install(const std::string& asset_url, const std::string& expected_
   result.version = description.version;
   result.bytes = total;
   return result;
+}
+
+namespace {
+void install_task(void* raw) {
+  std::unique_ptr<Job> job(static_cast<Job*>(raw));
+  const InstallResult result = install(job->url, job->sha);
+  {
+    std::lock_guard<std::mutex> guard(g_lock);
+    g_progress.state = result.ok ? "done" : "failed";
+    g_progress.error = result.error;
+    g_progress.version = result.version;
+    g_running = false;
+  }
+  vTaskDelete(nullptr);
+}
+}  // namespace
+
+bool start(const std::string& asset_url, const std::string& expected_sha256) {
+  {
+    std::lock_guard<std::mutex> guard(g_lock);
+    if (g_running) return false;
+    g_running = true;
+    g_progress = Progress{};
+    g_progress.state = "downloading";
+  }
+  Job* job = new Job{asset_url, expected_sha256};
+  if (xTaskCreate(install_task, "github-ota", 12288, job, 4, nullptr) != pdPASS) {
+    delete job;
+    std::lock_guard<std::mutex> guard(g_lock);
+    g_running = false;
+    g_progress.state = "failed";
+    g_progress.error = "no_task";
+  }
+  return true;
+}
+
+Progress progress() {
+  std::lock_guard<std::mutex> guard(g_lock);
+  return g_progress;
 }
 
 }  // namespace armor::github_update
