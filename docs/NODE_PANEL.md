@@ -99,7 +99,7 @@ bench is *Read information*: an answer with a version such as `1.02.22062416` co
 *Firmware and log → Update* takes the `.bin` of this project (`build/<node>-<board>/armor_radar.bin`, for example `build/generic-s3-eth/armor_radar.bin`; not the merged image in `dist/`). The node
 checks the image (its own hash and its project name) before it changes the boot partition, restarts into the new version, and the boot loader
 goes back to the previous version by itself if the new one does not bring its panel up and stay up for thirty seconds. The flash holds
-two application slots (`partitions.csv`). The first flash of a board is still USB (`tools\flash.bat`).
+two application slots (`partitions.csv`). The *Firmware slots* card of the same page lists both slots with their versions and boots the other one at the next restart (to go back to the previous version, or forward to the one just installed; an administrator, with a confirmation, and never an empty slot or a firmware of another project). The first flash of a board is still USB (`tools\flash.bat`).
 
 *Firmware and log → Search GitHub* installs the newest release of the repository by itself. A release is installed only if it carries two files: `armor_radar.bin`
 (the application image, not the merged one) and `armor_radar.bin.sha256` (its SHA-256 in hex, the line `sha256sum armor_radar.bin` writes). The node downloads the

@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented here.
 
+## [0.5.5] - Switch between the two firmware slots from the panel
+
+- **Firmware slots in the panel** (*Firmware and log -> Update*): a new card shows the two application slots (ota_0 and ota_1) with the version each one holds and which one runs, and a button boots the other one at the next restart - the way back to the version that ran before an update, or forward to the one just installed. It asks for confirmation, needs an administrator, refuses an empty slot or a firmware of another project, and the settings are kept. The same card exists in the radar, solar, electrical and touch-panel nodes, in the seven languages (`POST /api/v1/ota/switch`).
+
 ## [0.5.4] - Updating from GitHub works, and shows its progress
 
 - **Real bug, found on the bench:** *Search GitHub → Install* stopped with `http_302`. GitHub answers a download with a redirect to another server (and a long, signed address in the `Location` header); the node did not follow it and its header buffer was too small for that address. Redirects are now followed (up to five) and the buffer holds the address. The update had never been able to download anything before this.

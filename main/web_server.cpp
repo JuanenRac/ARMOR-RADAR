@@ -658,6 +658,23 @@ esp_err_t post_reboot(httpd_req_t* r) {
   return send_ok(r);
 }
 
+// Boots the other firmware slot (ota_0 <-> ota_1): the way back to the version that ran before an update, or forward to the one just installed.
+// The other slot must hold a firmware of this same node type, and setting it as the boot slot checks the whole image first.
+esp_err_t post_ota_switch(httpd_req_t* r) {
+  Who who;
+  if (!require(r, who, true, true)) return ESP_OK;
+  const esp_partition_t* other = esp_ota_get_next_update_partition(nullptr);
+  esp_app_desc_t description{};
+  if (other == nullptr || esp_ota_get_partition_description(other, &description) != ESP_OK) return send_error(r, 409, "slot_empty");
+  if (std::strcmp(description.project_name, esp_app_get_description()->project_name) != 0) return send_error(r, 422, "wrong_firmware");
+  if (esp_ota_set_boot_partition(other) != ESP_OK) return send_error(r, 500, "ota_boot");
+  ESP_LOGW(kTag, "boot slot changed to %s (firmware %s) by \"%s\"; restarting", other->label, description.version, who.user.c_str());
+  json::Writer w;
+  w.begin_object().field("ok", true).field("restart_required", true).field("slot", other->label).field("version", description.version).end_object();
+  restart_after(1500);
+  return send_json(r, 200, w.str());
+}
+
 esp_err_t post_factory_reset(httpd_req_t* r) {
   Who who;
   if (!require(r, who, true, true)) return ESP_OK;
@@ -817,6 +834,7 @@ esp_err_t api_handler(httpd_req_t* r) {
     if (route == "reboot") return post_reboot(r);
     if (route == "factory-reset") return post_factory_reset(r);
     if (route == "ota") return post_ota(r);
+    if (route == "ota/switch") return post_ota_switch(r);
     if (route == "ota/install") return post_ota_install(r);
     if (route == "time") return post_time(r);
   } else if (method == HTTP_PUT) {

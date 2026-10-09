@@ -722,6 +722,24 @@ function helpPage() {
     card(t("help_" + helpTopic + "_title"), ...paragraphs.map(p => el("p", {}, p))));
 }
 
+// The two firmware slots and the switch between them: the node boots the other one at the next restart.
+function slotCard() {
+  const parts = ((S.status && S.status.flash && S.status.flash.partitions) || []).filter(p => p.app);
+  const other = parts.find(p => !p.running);
+  const usable = !!(other && other.used);
+  const result = el("p", { class: "muted" });
+  return card(t("slotsTitle"), el("p", { class: "muted" }, t("slotsHelp")),
+    kv(parts.map(p => [p.label, p.used ? "v" + p.version + (p.running ? " · " + t("slotRunning") : p.next_boot ? " · " + t("slotNextBoot") : "") : t("slotEmpty")])), result,
+    el("div", { class: "actions" }, el("button", { class: "b danger", disabled: !isAdmin() || !usable, onclick: async () => {
+      if (!usable || !confirm(t("switchAsk", other.label, other.version))) return;
+      const r = await api("POST", "ota/switch", {});
+      if (!r.ok) { result.textContent = errorText(r.data.error); result.className = "err"; return; }
+      S.rebooting = true; render();
+      const wait = async () => { const q = await api("GET", "session"); if (q.ok) location.reload(); else setTimeout(wait, 2000); };
+      setTimeout(wait, 4000);
+    } }, usable ? t("switchSlot", other.label) : t("switchSlotNone"))));
+}
+
 function updatePage() {
   const s = S.status;
   const progress = el("i"), label = el("p", { class: "muted" }), file = el("input", { type: "file", accept: ".bin" });
@@ -738,6 +756,7 @@ function updatePage() {
           else { result.textContent = errorText(r.error); result.className = "err"; }
         });
       } }, t("upload")))),
+    slotCard(),
     card(t("githubUpdateTitle"),
       el("div", { class: "actions" }, el("button", { class: "b", tip: "checkGithub", disabled: !isAdmin() || S.github.busy, onclick: githubCheck }, S.github.busy ? t("checking") : t("checkGithub"))),
       S.github.checked && !S.github.error ? el("p", { class: "muted" }, S.github.available ? t("githubAvailable", S.github.latest) : t("githubUpToDate")) : null,
