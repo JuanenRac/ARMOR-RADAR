@@ -2,10 +2,11 @@
 
 The firmware of this repository targets the **Waveshare ESP32-S3-ETH** (ESP32-S3R8 with 8 MB of octal PSRAM, 16 MB of flash, W5500
 Ethernet over SPI, PoE through the module of the board) with up to three **HLK-LD2450** radars and an optional **VEML7700** light
-sensor. Two such boards, each with three radars, make two nodes of 270 degrees. **None of it has run on a board yet**: this page is
-the order to do things in, and what to look at, so the first day on the bench finds the faults quickly. The C++ core is tested on a
-computer; the firmware image builds in a container; the panel was exercised in a browser against a stand-in node; everything that
-needs the board is unverified until you have done this page.
+sensor. Two such boards, each with three radars, make two nodes of 270 degrees. **Two such nodes are built and running**: the panel,
+the logins, the settings in flash, the Ethernet link, the broker link, the telemetry, the live map and the over-the-air update have been used on
+them. This page remains the order to do things in, and what to look at, for a new board, so the first day on the bench finds the faults quickly.
+What the two nodes have not yet shown is listed at the end of this page and in the [hardware boundary](HARDWARE_BOUNDARY.md); until a point is
+done on a board it stays unverified.
 
 ## 1. Wiring
 

@@ -2,8 +2,8 @@
 
 Every node serves its own panel on port 80, from the address it has (or from its own set-up Wi-Fi). It looks like ARMOR-STUDIO
 (same colours, the menu on the left), speaks the seven languages of the project, and is embedded in the firmware, so it needs no
-Internet and a firmware update updates it too. Nothing here has run on a board yet: the panel itself was exercised against a
-stand-in node (`tools/panel_mock.mjs`) in a real browser, and the node side is compiled and, for its logic, tested on a computer.
+Internet and a firmware update updates it too. The panel runs on two real nodes (login, settings, firmware update, live map); it was also exercised against a
+stand-in node (`tools/panel_mock.mjs`) in a real browser, and the node side is tested on a computer for its logic.
 
 ## First start: set-up
 

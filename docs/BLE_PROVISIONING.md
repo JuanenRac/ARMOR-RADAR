@@ -3,7 +3,7 @@
 For a node that has no Ethernet cable, or no address yet, a phone can set it up over Bluetooth Low Energy: the node's name, its Wi-Fi station
 (the network of a router or an access point), a fixed address, the broker, the access point, the radars and the pins. It is the **same
 configuration** as the web panel's, with the same users and the same set-up code. The ARMOR app for Android (ARMOR-ANDROID-CONTROL) is the client.
-**Nothing of this has run on a board yet, nor against a phone.**
+**None of this has yet been recorded between a board and a phone.**
 
 ## When a node listens
 
@@ -89,7 +89,7 @@ and then `reboot`. `wifi.scan` gives the app the list of networks to choose from
 
 ## Limits of this work
 
-* The radio side (NimBLE) builds, and the framing, the operations and their access rules are tested on a computer (`tests/test_node.cpp`); the whole thing has
-  not run on a board, and no phone has talked to it.
+* The radio side (NimBLE) builds, and the framing, the operations and their access rules are tested on a computer (`tests/test_node.cpp`); the node runs on real boards,
+  but no phone has yet been recorded talking to its Bluetooth channel.
 * The "just works" pairing is the weakest part; a passkey pairing would need the node to show the passkey (it has no display), so it is not offered.
 * The set-up code and the passwords are sent inside the encrypted link; a phone that pairs with an impostor node would send them to it.
