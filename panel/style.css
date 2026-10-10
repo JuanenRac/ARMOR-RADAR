@@ -112,3 +112,5 @@ pre.log { margin: 0; max-height: 380px; overflow: auto; padding: .7rem; border: 
   .grid.wide { grid-template-columns: 1fr; }
   .top { display: block; } .pills { margin-top: .6rem; }
 }
+.section { margin: 1.1rem 0 .1rem; font-size: 1.05rem; }
+pre.code { margin: 0; padding: .7rem .8rem; border: 1px solid var(--line); border-radius: 10px; background: #071720; color: #cdeff3; font: 500 .78rem var(--mono); overflow-x: auto; white-space: pre; }

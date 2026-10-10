@@ -9,13 +9,9 @@
 
 namespace armor::github_update {
 
-// The repository releases are read from, and the exact name of the standalone app image attached to each one (never the "-complete" image,
-// which has the bootloader and partition table too - installing that into an OTA slot would not boot).
+// The repository releases are read from. Which file of a release is this board's image (and its SHA-256) is core/release_assets.hpp's: a node installs a release only when the
+// image it downloaded has exactly the hash the release publishes - a truncated, altered or mixed-up download is refused.
 constexpr const char* kRepo = "JuanenRac/ARMOR-RADAR";
-constexpr const char* kAssetName = "armor_radar.bin";
-// Next to it every release carries the SHA-256 of that file (`armor_radar.bin.sha256`, the hash in hex, optionally followed by the file name, as sha256sum
-// writes it). A node installs a release only when the image it downloaded has exactly that hash: a truncated, altered or mixed-up download is refused.
-constexpr const char* kChecksumAssetName = "armor_radar.bin.sha256";
 
 struct CheckResult {
   bool ok = false;             // false: `error` says why (network, no release, no matching asset...)
@@ -26,8 +22,8 @@ struct CheckResult {
   bool update_available = false;
 };
 
-// Asks GitHub's API for the newest release and compares it to the running firmware. Blocks for the duration of the HTTPS request.
-CheckResult check();
+// Asks GitHub's API for the newest release and compares it to the running firmware; `board_id` (board::kId) says which image is this node's. Blocks for the duration of the HTTPS request.
+CheckResult check(const char* board_id);
 
 struct InstallResult {
   bool ok = false;

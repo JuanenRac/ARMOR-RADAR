@@ -33,8 +33,8 @@ const config = {
   v: 1, node: { id: "armor-a1b2c3", name: "Perimeter 1" }, uplink: wired ? "ethernet" : "wifi",
   ip: { dhcp: true, address: "", netmask: "255.255.255.0", gateway: "", dns1: "", dns2: "", hostname: "" },
   ap: { enabled: true, ssid: "ARMOR", security: "wpa2", password_set: true, channel: 0, hidden: false, max_clients: 8, tx_power_dbm: 15, bandwidth_mhz: 20, country: "ES", bridge: true },
-  sta: { enabled: false, ssid: "", password_set: false },
-  mqtt: { enabled: true, uri: "mqtt://192.168.0.180:18883", username: "field-node-a1b2c3", password_set: true, heartbeat_s: 10, telemetry_ms: 200, ntp: "pool.ntp.org" },
+  sta: { enabled: false, ssid: "", password_set: false, backup: [] },
+  mqtt: { enabled: true, uri: "mqtt://192.168.0.180:18883", username: "field-node-a1b2c3", password_set: true, heartbeat_s: 10, telemetry_ms: 200, ntp: "pool.ntp.org", backup: [] },
   radars: [{ enabled: true, model: "ld2450", baud: 0, name: "", rx: 16, tx: 15 }, { enabled: true, model: "ld2461", baud: 0, name: "", rx: 17, tx: 21 }, { enabled: true, model: "ld2410", baud: 0, name: "garage_presence", rx: 18, tx: 38 }],
   sensors: { veml7700: true, sda: 1, scl: 2, lux_fallback: -1 },
   pins: [
@@ -43,6 +43,8 @@ const config = {
     { gpio: 2, name: "battery", mode: "adc", invert: false, pull: "none", initial_on: false, safe: "keep", link_timeout_s: 0, pulse_ms: 0, debounce_ms: 30, period_s: 10, freq_hz: 1000, report: "battery", scale: 0.0057, offset: 0 },
   ],
   ble: { mode: "setup" },
+  time: { ntp_enabled: true, ntp: "pool.ntp.org", zone: "CET-1CEST,M3.5.0,M10.5.0/3" },
+  system: { auto_restart_hours: 0 },
   web: { mode: "both" },
   ui: { language: "en" },
 };
@@ -192,6 +194,9 @@ const server = createServer(async (request, response) => {
     return json(response, 200, { ok: true, restart_required: false });
   }
   if (method === "GET" && route === "log") return json(response, 200, { next: logText.length, text: logText.slice(Number(url.searchParams.get("from") ?? 0)) });
+  if (method === "GET" && route === "ota/check") { if (!needAdmin()) return; return json(response, 200, { ok: true, current_version: "0.2.3", latest_version: "9.9.9", update_available: true }); }
+  if (method === "POST" && route === "ota/install") { if (!needAdmin()) return; return json(response, 200, { ok: true, started: true }); }
+  if (method === "GET" && route === "ota/progress") { if (!needAdmin()) return; return json(response, 200, { state: "downloading", got: 300000, total: 1200000 }); }
   if (method === "POST" && route === "ota/switch") { if (!needAdmin()) return; rebootAt = Date.now(); return json(response, 200, { ok: true, restart_required: true, slot: "ota_1", version: "0.0.0" }); }
   if (method === "POST" && route === "reboot") { if (!needAdmin()) return; rebootAt = Date.now(); return json(response, 200, { ok: true, restart_required: false }); }
   if (method === "POST" && route === "factory-reset") { if (!needAdmin()) return; if (body.confirm !== "RESET") return json(response, 422, { error: "confirm_required" }); users.clear(); return json(response, 200, { ok: true, restart_required: true }); }

@@ -17,6 +17,7 @@ extern "C" {
 #include "mbedtls/sha256.h"
 }
 #include "core/json.hpp"
+#include "core/release_assets.hpp"
 #include "core/semver.hpp"
 
 namespace armor::github_update {
@@ -105,7 +106,7 @@ std::string to_hex(const std::uint8_t* bytes, std::size_t count) {
 }
 }  // namespace
 
-CheckResult check() {
+CheckResult check(const char* board_id) {
   CheckResult result;
   std::string body;
   const std::string url = std::string("https://api.github.com/repos/") + kRepo + "/releases/latest";
@@ -118,14 +119,10 @@ CheckResult check() {
   if (!tag_text.empty() && tag_text[0] == 'v') tag_text.remove_prefix(1);
   result.latest_version = std::string(tag_text);
   const json::Value* assets = document.get("assets");
-  std::string checksum_url;
-  if (assets != nullptr && assets->is_array()) {
-    for (const json::Value& asset : assets->items) {
-      const std::string name = asset.string_or("name", "");
-      if (name == kAssetName) result.asset_url = asset.string_or("browser_download_url", "");
-      else if (name == kChecksumAssetName) checksum_url = asset.string_or("browser_download_url", "");
-    }
-  }
+  // The image built for this board wins; the plain name (the default board's, from a release that predates the naming) only when there is none.
+  const release::Picked picked = release::pick(assets, board_id);
+  result.asset_url = picked.image_url;
+  const std::string checksum_url = picked.checksum_url;
   // The release's JSON (several assets make it 15 KB or more) and its parsed tree are no longer needed: give the memory back before the next
   // TLS connection (the hash), which is what the node was short of when it said it could not get the checksum.
   document = json::Value();

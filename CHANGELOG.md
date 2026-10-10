@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## [0.5.7] - The update from GitHub installs the image of its own board
+
+- **The GitHub update picks the image built for the node's board** (`armor_radar-<board>.bin`, with its `.sha256`). It used to download `armor_radar.bin`, the s3-eth image, whatever the board was - the release notes warned not to use it on a Wi-Fi board. A release from before the naming still serves the s3-eth board with the plain `armor_radar.bin`; a Wi-Fi board never takes an image that is not its own.
+- **The update from GitHub is now shared with the other nodes** (`main/github_update.*`, `main/core/semver.hpp` and `main/core/release_assets.hpp` come from ARMOR-COMMON's firmware base, which the solar, electrical and touch-panel nodes use too); the host tests choose the image for releases with and without an image per board.
+- **The missing-checksum message** no longer names the radar's file: it says the release carries no checksum file next to the image, in the seven languages.
+- **The stand-in node** (`tools/panel_mock.mjs`) answers the three GitHub routes and its settings were brought up to date (clock, backup networks).
+
 ## [0.5.6] - No silence without a clock, firmware slots and a login over HTTP after one over HTTPS
 
 - **A node without a clock no longer falls silent.** It used to drop everything it read until a time server answered, so a node on a network without internet, or one that restarted after a power cut with the provider down, said nothing at all. It now publishes with the time since it started, and ARMOR-SERVER stamps such a message with the moment it receives it; as soon as the clock is set it sends real dates again. (The radar used to wait for the clock before even connecting to the broker.)

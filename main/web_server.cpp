@@ -768,7 +768,7 @@ bool g_ota_restart_scheduled = false;
 esp_err_t get_ota_check(httpd_req_t* r) {
   Who who;
   if (!require(r, who, true, false)) return ESP_OK;
-  const github_update::CheckResult result = github_update::check();
+  const github_update::CheckResult result = github_update::check(board::kId);
   json::Writer w;
   w.begin_object().field("ok", result.ok);
   if (result.ok) w.field("current_version", esp_app_get_description()->version).field("latest_version", result.latest_version).field("update_available", result.update_available);
@@ -781,7 +781,7 @@ esp_err_t get_ota_check(httpd_req_t* r) {
 esp_err_t post_ota_install(httpd_req_t* r) {
   Who who;
   if (!require(r, who, true, true)) return ESP_OK;
-  const github_update::CheckResult checked = github_update::check();
+  const github_update::CheckResult checked = github_update::check(board::kId);
   if (!checked.ok) return send_error(r, 502, checked.error.c_str());
   if (checked.asset_url.empty()) return send_error(r, 404, "no_asset");
   if (checked.sha256.empty()) return send_error(r, 422, "no_checksum");
