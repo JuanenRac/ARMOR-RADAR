@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented here.
 
-## [0.5.6] - A login over HTTP after one over HTTPS, and a GitHub check that fits in memory
+## [0.5.6] - No silence without a clock, firmware slots and a login over HTTP after one over HTTPS
 
 - **A node without a clock no longer falls silent.** It used to drop everything it read until a time server answered, so a node on a network without internet, or one that restarted after a power cut with the provider down, said nothing at all. It now publishes with the time since it started, and ARMOR-SERVER stamps such a message with the moment it receives it; as soon as the clock is set it sends real dates again. (The radar used to wait for the clock before even connecting to the broker.)
 - **The broker link no longer races with itself** when the node moves to another saved broker: the client is replaced under a lock and the old one is stopped outside it, so a message being published at that moment can no longer use a client that is being destroyed.
