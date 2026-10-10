@@ -61,6 +61,9 @@ using api::status_json;
 using api::version_text;
 constexpr char kTag[] = "armor-web";
 constexpr char kCookie[] = "armor_session";
+// The page over HTTPS gets its own cookie name: a browser will not let a plain-HTTP page overwrite a "Secure" cookie of the same name,
+// so with one shared name a login over HTTP after one over HTTPS looked as if it did nothing.
+constexpr char kCookieTls[] = "armor_session_tls";
 constexpr std::size_t kMaxBody = 12 * 1024;
 constexpr std::size_t kMaxFirmware = 0x2E0000;   // a slot of the partition table is 0x300000
 
@@ -74,6 +77,7 @@ tlscert::Material g_material;
 
 // Whether a request came over TLS: it arrived on the HTTPS server.
 bool is_tls(httpd_req_t* r) { return g_tls_server != nullptr && r->handle == g_tls_server; }
+std::string cookie_name(httpd_req_t* r) { return is_tls(r) ? kCookieTls : kCookie; }
 
 std::uint64_t now_ms() { return static_cast<std::uint64_t>(esp_timer_get_time()) / 1000ULL; }
 
@@ -145,7 +149,7 @@ std::string header(httpd_req_t* r, const char* name) {
 // The session token of a request: the cookie, or "Authorization: Bearer".
 std::string token_of(httpd_req_t* r) {
   const std::string cookies = header(r, "Cookie");
-  const std::string key = std::string(kCookie) + "=";
+  const std::string key = cookie_name(r) + "=";
   std::size_t at = 0;
   while (at < cookies.size()) {
     while (at < cookies.size() && (cookies[at] == ' ' || cookies[at] == ';')) ++at;
@@ -238,7 +242,7 @@ void start_session(httpd_req_t* r, const std::string& user, auth::Role role, std
     g_sessions.create(token, user, role, now_ms(), remember);
   }
   const int max_age = remember ? 30 * 24 * 3600 : 1800;
-  cookie_out = std::string(kCookie) + "=" + token + "; " + webpolicy::cookie_attributes(is_tls(r), max_age);
+  cookie_out = cookie_name(r) + "=" + token + "; " + webpolicy::cookie_attributes(is_tls(r), max_age);
   httpd_resp_set_hdr(r, "Set-Cookie", cookie_out.c_str());
 }
 
@@ -251,7 +255,7 @@ esp_err_t get_session(httpd_req_t* r) {
   json::Writer w;
   w.begin_object().field("setup", store::users_empty()).field("authenticated", who.ok).field("user", who.ok ? who.user : "").field("role", who.ok ? auth::to_text(who.role) : "")
       .field("node_id", s.node_id).field("language", s.language).field("version", version_text()).field("setup_ssid", n.ap_setup ? n.ap_ssid : "").field("mac", n.mac)
-      .field("board", board::kId).field("ethernet", board::kHasEthernet).end_object();
+      .field("kind", "radar").field("board", board::kId).field("ethernet", board::kHasEthernet).end_object();
   return send_json(r, 200, w.str());
 }
 
@@ -349,7 +353,7 @@ esp_err_t post_logout(httpd_req_t* r) {
     std::lock_guard<std::mutex> guard(g_lock);
     g_sessions.end(token);
   }
-  const std::string expired = std::string(kCookie) + "=; " + webpolicy::cookie_attributes(is_tls(r), 0);
+  const std::string expired = cookie_name(r) + "=; " + webpolicy::cookie_attributes(is_tls(r), 0);
   httpd_resp_set_hdr(r, "Set-Cookie", expired.c_str());
   return send_ok(r);
 }

@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented here.
 
+## [0.5.6] - A login over HTTP after one over HTTPS, and a GitHub check that fits in memory
+
+- **A node without a clock no longer falls silent.** It used to drop everything it read until a time server answered, so a node on a network without internet, or one that restarted after a power cut with the provider down, said nothing at all. It now publishes with the time since it started, and ARMOR-SERVER stamps such a message with the moment it receives it; as soon as the clock is set it sends real dates again. (The radar used to wait for the clock before even connecting to the broker.)
+- **The broker link no longer races with itself** when the node moves to another saved broker: the client is replaced under a lock and the old one is stopped outside it, so a message being published at that moment can no longer use a client that is being destroyed.
+- **The panel's help** (*Firmware and log*) describes the firmware slots and their switch, the copy of the log and the check of the hash and the progress bar of the GitHub update, in the seven languages.
+- **The node says what kind it is.** The public session answer (`/api/v1/session`) now carries `kind` (`radar`, `solar`, `electrical` or `hmi`) next to the node's id, version and board, so Studio's search for nodes in the network can tell a radar node from a solar one before it is added, even when its panel title cannot be read.
+- **Copy the log** (*Firmware and log -> Log*): a button copies everything the log shows to the clipboard, in the seven languages. It also works when the panel is opened over plain HTTP, where the browser's own clipboard is not available, through a fallback.
+- **A login over HTTP works after one over HTTPS.** The session cookie of the page served over HTTPS now has its own name (`armor_session_tls`); with one shared name, the browser kept the "Secure" cookie of the HTTPS login and refused to let a plain-HTTP page replace it, so the login over HTTP looked as if it did nothing (it worked in a private window).
+- **The GitHub check gives back its memory before it asks for the hash.** The release's JSON (15 KB with the images of several boards) and its parsed tree are freed before the second TLS connection that reads the `.sha256`; with the bigger release the node said "the release brings no checksum" because it could not open that connection. The reason it could not is now written in the node's log.
+
 ## [0.5.5] - Switch between the two firmware slots from the panel
 
 - **Firmware slots in the panel** (*Firmware and log -> Update*): a new card shows the two application slots (ota_0 and ota_1) with the version each one holds and which one runs, and a button boots the other one at the next restart - the way back to the version that ran before an update, or forward to the one just installed. It asks for confirmation, needs an administrator, refuses an empty slot or a firmware of another project, and the settings are kept. The same card exists in the radar, solar, electrical and touch-panel nodes, in the seven languages (`POST /api/v1/ota/switch`).

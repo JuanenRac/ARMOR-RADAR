@@ -740,6 +740,20 @@ function slotCard() {
     } }, usable ? t("switchSlot", other.label) : t("switchSlotNone"))));
 }
 
+// Copies text to the clipboard. navigator.clipboard only exists on a secure page (HTTPS), and the panel is often opened over plain HTTP, so
+// there is a fallback through a hidden text area. The button says what happened for a moment.
+function copyText(text, button) {
+  const done = ok => { const label = button.textContent; button.textContent = ok ? t("copied") : t("copyFailed"); setTimeout(() => { button.textContent = label; }, 1500); };
+  const fallback = () => {
+    const area = el("textarea", { style: "position:fixed;left:-1000px;top:0" }); area.value = text;
+    document.body.appendChild(area); area.select();
+    let ok = false;
+    try { ok = document.execCommand("copy"); } catch (error) { ok = false; }
+    area.remove(); done(ok);
+  };
+  if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(() => done(true), fallback); else fallback();
+}
+
 function updatePage() {
   const s = S.status;
   const progress = el("i"), label = el("p", { class: "muted" }), file = el("input", { type: "file", accept: ".bin" });
@@ -771,7 +785,8 @@ function updatePage() {
         const r = await api("POST", "factory-reset", { confirm: confirmBox.value });
         if (r.ok) { S.rebooting = true; render(); setTimeout(() => location.reload(), 6000); } else alert(errorText(r.data.error));
       } }, t("factoryTitle")))),
-    card(t("logTitle"), logBox, el("div", { class: "actions" }, el("button", { class: "b", onclick: async () => { S.log = { next: 0, text: "" }; await refreshLog(); } }, t("refresh")))));
+    card(t("logTitle"), logBox, el("div", { class: "actions" }, el("button", { class: "b", onclick: async () => { S.log = { next: 0, text: "" }; await refreshLog(); } }, t("refresh")),
+      el("button", { class: "b", tip: "copyLog", onclick: e => copyText(S.log.text, e.currentTarget) }, t("copyLog")))));
 }
 
 // ---- data, polling and the shell -------------------------------------------------------------------------------------------------------

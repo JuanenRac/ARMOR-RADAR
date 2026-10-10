@@ -7,6 +7,7 @@
 #include "mqtt_link.hpp"
 
 #include <atomic>
+#include <mutex>
 #include <ctime>
 extern "C" {
 #include <sys/time.h>
@@ -32,6 +33,9 @@ constexpr char kTag[] = "armor-mqtt";
 
 config::Settings g_settings;
 esp_mqtt_client_handle_t g_client = nullptr;
+// The client is replaced when the node moves to another saved broker, while other tasks publish: every use of it, and its replacement, go through this lock. The old client is stopped
+// AFTER it has been taken out under the lock, never inside it: stopping waits for the client's own task, which may be waiting for this lock in one of its callbacks.
+std::mutex g_client_lock;
 std::atomic<bool> g_connected{false};
 std::atomic<bool> g_enabled{false};
 std::atomic<std::uint32_t> g_published{0};
@@ -41,6 +45,13 @@ std::atomic<int> g_withheld{0};   // 0 nothing, 1 light, 2 radars
 // next one, the same way main/network.cpp does for Wi-Fi, after the connection has stayed down for a while; it never touches a
 // broker that is still working.
 int g_broker_index = 0;
+
+// Hands one message to the client, if there is one; a negative number says it was not accepted.
+int client_publish(const char* topic, const char* data, int length, int qos) {
+  std::lock_guard<std::mutex> guard(g_client_lock);
+  return g_client == nullptr ? -1 : esp_mqtt_client_publish(g_client, topic, data, length, qos, 0);
+}
+
 
 config::Broker current_broker(const config::Settings& s, int index) {
   if (index <= 0 || static_cast<std::size_t>(index) > s.mqtt.backup.size()) return {s.mqtt.uri, s.mqtt.username, s.mqtt.password};
@@ -58,7 +69,7 @@ void on_mqtt(void*, esp_event_base_t, int32_t event_id, void* data) {
       g_connected = true;
       ESP_LOGI(kTag, "MQTT connected to %s", current_broker(g_settings, g_broker_index).uri.c_str());
       const std::string filter = gpio::command_filter(g_settings.node_id);
-      if (!filter.empty()) esp_mqtt_client_subscribe(g_client, filter.c_str(), 1);
+      if (!filter.empty()) esp_mqtt_client_subscribe(event->client, filter.c_str(), 1);
       pins::publish_all();
       radar::publish_presence_now();
       publish_info();
@@ -82,18 +93,18 @@ void on_mqtt(void*, esp_event_base_t, int32_t event_id, void* data) {
 }
 
 void publish_health(bool online) {
-  if (!g_connected || !clock_is_set()) return;  // never publish a timestamp from an unset clock
+  if (!g_connected) return;
   char topic[96];
   char payload[128];
   std::size_t length = 0;
   if (!armor::build_topic(g_settings.node_id, "health", topic, sizeof topic)) return;
   if (armor::build_health(g_settings.node_id, wall_clock_ms(), online, payload, sizeof payload, length) != armor::JsonResult::kOk) return;
-  esp_mqtt_client_publish(g_client, topic, payload, static_cast<int>(length), 1, 0);
+  client_publish(topic, payload, static_cast<int>(length), 1);
 }
 
 // Tells the server where this node's own web panel is, so Studio can link to it. Sent when the node connects and every minute.
 void publish_info() {
-  if (!g_connected || !clock_is_set()) return;
+  if (!g_connected) return;
   const network::Status net = network::status();
   if (!net.has_ip) return;
   char topic[96];
@@ -102,13 +113,13 @@ void publish_info() {
   if (!armor::build_topic(g_settings.node_id, "info", topic, sizeof topic)) return;
   const config::Settings current = store::settings();   // the name may have been changed in the panel since the start
   if (armor::build_info(g_settings.node_id, wall_clock_ms(), current.node_name, esp_app_get_description()->version, net.ip, 80, payload, sizeof payload, length) != armor::JsonResult::kOk) return;
-  esp_mqtt_client_publish(g_client, topic, payload, static_cast<int>(length), 1, 0);
+  client_publish(topic, payload, static_cast<int>(length), 1);
 }
 
 void publish_telemetry() {
   static bool warned_about_light = false;
   static bool warned_about_radars = false;
-  if (!g_connected || !clock_is_set()) return;
+  if (!g_connected) return;
   const float lux = armor::light_lux();
   if (!(lux >= 0.0f)) {  // unknown light: withhold, and say so once
     g_withheld = 1;
@@ -134,7 +145,7 @@ void publish_telemetry() {
   std::size_t length = 0;
   if (!armor::build_topic(g_settings.node_id, "telemetry", topic, sizeof topic)) return;
   if (armor::build_telemetry(g_settings.node_id, wall_clock_ms(), lux, tracks, count, payload, sizeof payload, length) != armor::JsonResult::kOk) return;
-  if (esp_mqtt_client_publish(g_client, topic, payload, static_cast<int>(length), 0, 0) >= 0) ++g_published;
+  if (client_publish(topic, payload, static_cast<int>(length), 0) >= 0) ++g_published;
 }
 
 void heartbeat_task(void*) {
@@ -176,9 +187,10 @@ void start_client(const config::Broker& broker) {
   extern const char ca_pem_start[] asm("_binary_ca_pem_start");
   config.broker.verification.certificate = ca_pem_start;
 #endif
-  g_client = esp_mqtt_client_init(&config);
-  ESP_ERROR_CHECK(esp_mqtt_client_register_event(g_client, MQTT_EVENT_ANY, on_mqtt, nullptr));
-  ESP_ERROR_CHECK(esp_mqtt_client_start(g_client));
+  esp_mqtt_client_handle_t client = esp_mqtt_client_init(&config);
+  ESP_ERROR_CHECK(esp_mqtt_client_register_event(client, MQTT_EVENT_ANY, on_mqtt, nullptr));
+  { std::lock_guard<std::mutex> guard(g_client_lock); g_client = client; }   // before it starts: its first events may publish
+  ESP_ERROR_CHECK(esp_mqtt_client_start(client));
 }
 
 constexpr int kBrokerCheckEverySeconds = 10;
@@ -199,7 +211,9 @@ void broker_watchdog_task(void*) {
     g_broker_index = (g_broker_index + 1) % total;
     const config::Broker broker = current_broker(g_settings, g_broker_index);
     ESP_LOGW(kTag, "the broker has not answered in a while: trying the next saved one (%s)", broker.uri.c_str());
-    if (g_client != nullptr) { esp_mqtt_client_stop(g_client); esp_mqtt_client_destroy(g_client); g_client = nullptr; }
+    esp_mqtt_client_handle_t old = nullptr;
+    { std::lock_guard<std::mutex> guard(g_client_lock); old = g_client; g_client = nullptr; }
+    if (old != nullptr) { esp_mqtt_client_stop(old); esp_mqtt_client_destroy(old); }
     start_client(broker);
   }
 }
@@ -209,8 +223,7 @@ void link_task(void*) {
   while (!network::has_ip()) vTaskDelay(pdMS_TO_TICKS(500));
   // The clock itself is clock_sync.cpp's (it starts without a broker too); the link only waits for it to hold a real date.
   if (!armor::build_topic(g_settings.node_id, "health", g_health_topic, sizeof g_health_topic)) vTaskDelete(nullptr);
-  // The last will carries the node's time at connection; the server always applies an offline message, whatever its timestamp.
-  while (!clock_is_set()) vTaskDelay(pdMS_TO_TICKS(500));
+  // The last will carries the node's time at connection (the time since it started when its clock is not set yet); the server always applies an offline message, whatever its timestamp.
   if (armor::build_health(g_settings.node_id, wall_clock_ms(), false, g_will, sizeof g_will, g_will_length) != armor::JsonResult::kOk) vTaskDelete(nullptr);
 
   start_client(current_broker(g_settings, g_broker_index));
@@ -235,17 +248,19 @@ void start(const config::Settings& settings) {
 bool connected() { return g_connected; }
 bool clock_is_set() { return std::time(nullptr) > 1700000000; }
 
-// The server ignores a message older than the last one it accepted from a node, so timestamps must be wall-clock time that survives a
-// reboot, not uptime.
+// The server ignores a message older than the last one it accepted from a node, so timestamps are wall-clock time that survives a reboot. A node whose clock is not set yet
+// (no time server reached, no internet) must not fall silent because of it, least of all a security node: it tells the time since it started, which is not a date, and the
+// server stamps such a message with the moment it receives it.
 std::uint64_t wall_clock_ms() {
+  if (!clock_is_set()) return static_cast<std::uint64_t>(esp_timer_get_time()) / 1000ULL;
   timeval tv{};
   gettimeofday(&tv, nullptr);
   return static_cast<std::uint64_t>(tv.tv_sec) * 1000ULL + static_cast<std::uint64_t>(tv.tv_usec) / 1000ULL;
 }
 
 void publish(const std::string& topic, const std::string& payload) {
-  if (!g_connected || g_client == nullptr) return;
-  if (esp_mqtt_client_publish(g_client, topic.c_str(), payload.c_str(), static_cast<int>(payload.size()), 0, 0) >= 0) ++g_published;
+  if (!g_connected) return;
+  if (client_publish(topic.c_str(), payload.c_str(), static_cast<int>(payload.size()), 0) >= 0) ++g_published;
 }
 
 Status status() {

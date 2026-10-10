@@ -126,12 +126,16 @@ CheckResult check() {
       else if (name == kChecksumAssetName) checksum_url = asset.string_or("browser_download_url", "");
     }
   }
+  // The release's JSON (several assets make it 15 KB or more) and its parsed tree are no longer needed: give the memory back before the next
+  // TLS connection (the hash), which is what the node was short of when it said it could not get the checksum.
+  document = json::Value();
+  std::string().swap(body);
   const bool newer = !result.asset_url.empty() && semver::is_newer(result.latest_version, esp_app_get_description()->version);
   if (newer) {
     // A newer release is offered only with the hash that lets the image be checked: without it the node says so instead of installing blind.
     std::string text, problem;
     if (checksum_url.empty()) { result.error = "no_checksum"; return result; }
-    if (!get_bounded(checksum_url, nullptr, text, problem)) { result.error = "no_checksum"; return result; }
+    if (!get_bounded(checksum_url, nullptr, text, problem)) { ESP_LOGW(kTag, "the checksum of the release could not be read: %s", problem.c_str()); result.error = "no_checksum"; return result; }
     result.sha256 = parse_sha256(text);
     if (result.sha256.empty()) { result.error = "no_checksum"; return result; }
   }
